@@ -38,7 +38,7 @@
 
   header { flex: none; padding: 12px 12px 10px; }
   .top { display: flex; align-items: center; gap: 10px; }
-  h1 { margin: 0; font: 800 26px/1 var(--display); letter-spacing: -.04em; }
+  h1 { cursor: pointer; margin: 0; font: 800 26px/1 var(--display); letter-spacing: -.04em; }
   h1 em { font-style: normal; color: var(--acid); }
   #q { flex: 1; min-width: 0; height: 38px; padding: 0 14px; border-radius: 999px;
     border: 1px solid var(--faint); background: rgba(255,255,255,.05); color: var(--ink);
@@ -59,7 +59,7 @@
   #days button.star[aria-pressed="true"] { background: var(--vio); border-color: var(--vio); color: #0a0a0a; }
   #days button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: rgba(255,255,255,.08); }
 
-  #scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  #scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior-x: contain;
     border-top: 1px solid var(--faint); scrollbar-width: thin; scrollbar-color: #333 transparent; }
   #canvas { position: relative; }
   .ruler { position: sticky; top: 0; z-index: 4; display: flex; height: var(--rulh);
@@ -512,6 +512,7 @@
   });
   try { for (var k = localStorage.length - 1; k >= 0; k--) { var key = localStorage.key(k); if (key && key.indexOf("tvg:") === 0) localStorage.removeItem(key); } } catch (e) {}
 
+  document.querySelector("h1").onclick = function () { location.reload(); }; // tap the logo to pick up a new version
   renderDays(); tick(); start();
 })();
 </script>
