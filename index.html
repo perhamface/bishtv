@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#09090b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="bishTV">
+<title>bishTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+  href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap">
+<style>
+  :root {
+    --bg: #09090b; --ink: #f4f4f1; --dim: #8b8b93; --faint: rgba(255,255,255,.07);
+    --tile: rgba(255,255,255,.055); --acid: #c8ff3d; --acid-soft: rgba(200,255,61,.16);
+    --chw: 78px; --rh: 74px; --rulh: 34px;
+    --display: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column;
+    overflow: hidden; color: var(--ink); background: var(--bg);
+    font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  /* aurora glow + film grain */
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(60% 45% at 85% -5%, rgba(124,92,255,.30), transparent 70%),
+      radial-gradient(50% 40% at 0% 0%, rgba(200,255,61,.10), transparent 70%),
+      radial-gradient(70% 50% at 50% 110%, rgba(0,180,255,.12), transparent 70%); }
+  body::after { content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: .07;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+  header { flex: none; padding: 12px 12px 10px; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  h1 { margin: 0; font: 800 26px/1 var(--display); letter-spacing: -.04em; }
+  h1 em { font-style: normal; color: var(--acid); }
+  #q { flex: 1; min-width: 0; height: 38px; padding: 0 14px; border-radius: 999px;
+    border: 1px solid var(--faint); background: rgba(255,255,255,.05); color: var(--ink);
+    font: inherit; outline: none; }
+  #q:focus { border-color: var(--acid); }
+  #q::placeholder { color: var(--dim); }
+  #now { flex: none; height: 38px; padding: 0 14px; border-radius: 999px; border: 0;
+    background: var(--acid); color: #0a0a0a; font: 700 12px var(--mono); letter-spacing: .06em;
+    cursor: pointer; display: flex; align-items: center; gap: 7px; }
+  #now i { width: 7px; height: 7px; border-radius: 50%; background: #0a0a0a; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  #days { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; }
+  #days::-webkit-scrollbar { display: none; }
+  #days button { flex: none; border: 1px solid var(--faint); background: none; color: var(--dim);
+    font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    padding: 7px 12px; border-radius: 999px; cursor: pointer; }
+  #days button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: rgba(255,255,255,.08); }
+
+  #scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+    border-top: 1px solid var(--faint); scrollbar-width: thin; scrollbar-color: #333 transparent; }
+  #canvas { position: relative; }
+  .ruler { position: sticky; top: 0; z-index: 4; display: flex; height: var(--rulh);
+    background: rgba(9,9,11,.72); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--faint); }
+  .corner { position: sticky; left: 0; z-index: 5; flex: none; width: var(--chw);
+    background: #09090b; border-right: 1px solid var(--faint); }
+  .rtrack { position: relative; flex: none; }
+  .hr { position: absolute; top: 0; height: 100%; display: flex; align-items: center;
+    padding-left: 8px; font: 600 11px var(--mono); color: var(--dim); letter-spacing: .04em;
+    border-left: 1px solid var(--faint); }
+  .hr.h { color: var(--ink); }
+  .nowpill { position: absolute; top: 6px; transform: translateX(-50%); z-index: 2;
+    background: var(--acid); color: #0a0a0a; font: 700 11px var(--mono);
+    padding: 3px 7px; border-radius: 999px; }
+  .nowline { position: absolute; top: var(--rulh); bottom: 0; width: 2px; margin-left: -1px;
+    background: var(--acid); z-index: 1; pointer-events: none;
+    box-shadow: 0 0 10px rgba(200,255,61,.4); }
+
+  .row { display: flex; height: var(--rh); border-bottom: 1px solid var(--faint);
+    content-visibility: auto; contain-intrinsic-size: auto var(--rh); }
+  .row.hide { display: none; }
+  .ch { position: sticky; left: 0; z-index: 3; flex: none; width: var(--chw);
+    display: flex; align-items: center; padding: 0 8px 0 12px;
+    background: #09090b; border-right: 1px solid var(--faint);
+    font: 700 12px/1.15 var(--display); letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .track { position: relative; flex: none; }
+  .p { position: absolute; top: 5px; bottom: 5px; padding: 9px 10px; border-radius: 14px;
+    background: var(--tile); border: 1px solid var(--faint); overflow: clip; cursor: pointer;
+    transition: background .15s, opacity .15s; }
+  .p:hover { background: rgba(255,255,255,.1); }
+  .p.past { opacity: .42; }
+  .p.live { border-color: rgba(200,255,61,.55);
+    background: linear-gradient(90deg, var(--acid-soft) var(--pct, 0%), var(--tile) var(--pct, 0%)); }
+  .p.miss { opacity: .12; }
+  .in { position: sticky; z-index: 2; left: calc(var(--chw) + 10px); width: max-content; max-width: 100%; }
+  .n { font: 650 15px/1.2 var(--display); letter-spacing: -.015em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m { margin-top: 5px; font: 500 10.5px var(--mono); color: var(--dim); letter-spacing: .03em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+  .live .m b { color: var(--acid); font-weight: 700; }
+  .p.tiny .in { display: none; }
+  .msg { padding: 60px 20px; text-align: center; color: var(--dim); }
+
+  /* detail sheet */
+  #shade { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.55);
+    opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #sheet { position: fixed; z-index: 21; left: 0; right: 0; bottom: 0; max-height: 78dvh; overflow: auto;
+    margin: 0 auto; max-width: 560px; padding: 10px 20px calc(26px + env(safe-area-inset-bottom));
+    background: rgba(22,22,26,.86); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4); border: 1px solid rgba(255,255,255,.1); border-bottom: 0;
+    border-radius: 28px 28px 0 0; transform: translateY(105%);
+    transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  body.open #shade { opacity: 1; pointer-events: auto; }
+  body.open #sheet { transform: none; }
+  .grab { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.25); margin: 0 auto 16px; }
+  #s-img { display: block; width: 100%; height: 170px; object-fit: cover; border-radius: 18px; margin-bottom: 16px; }
+  #s-ch { font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--acid); }
+  #s-n { margin: 8px 0 0; font: 800 30px/1.02 var(--display); letter-spacing: -.035em; }
+  #s-e { margin-top: 6px; color: var(--dim); font-size: 15px; }
+  #s-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  #s-tags span { font: 600 11px var(--mono); letter-spacing: .05em; text-transform: uppercase;
+    padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); }
+  #s-tags span.t { background: var(--ink); color: #0a0a0a; border-color: var(--ink); }
+  #s-d { margin: 16px 0 0; font-size: 15.5px; line-height: 1.5; color: #d6d6d2; }
+  #days a { flex: none; align-self: center; margin-left: 6px; font: 10px var(--mono); color: #5c5c63; white-space: nowrap; }
+
+  @media (min-width: 760px) {
+    :root { --chw: 132px; --rh: 78px; }
+    header { padding: 16px 20px 12px; }
+    h1 { font-size: 32px; }
+    #q { max-width: 340px; margin-left: auto; }
+    .ch { font-size: 14px; padding-left: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>bish<em>TV</em></h1>
+    <input id="q" type="search" placeholder="Search shows" autocomplete="off" aria-label="Search">
+    <button id="now" type="button"><i></i><span id="clock">NOW</span></button>
+  </div>
+  <div id="days"></div>
+</header>
+<div id="scroller"><p class="msg">Loading listings…</p></div>
+<div id="shade"></div>
+<div id="sheet" role="dialog" aria-modal="true" aria-labelledby="s-n">
+  <div class="grab"></div>
+  <img id="s-img" alt="" style="display:none">
+  <div id="s-ch"></div>
+  <h2 id="s-n"></h2>
+  <div id="s-e"></div>
+  <div id="s-tags"></div>
+  <p id="s-d"></p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var FEED = "https://raw.githubusercontent.com/dp247/Freeview-EPG/master/epg.xml";
+  // Regional versions of BBC One and ITV1 (swap the ids for another region, e.g. BBCOneLondonHD.uk / ITV1London.uk)
+  var BBC1 = "BBCOneWest.uk", ITV1 = "ITV1WestCountry.uk";
+  // Channels shown, in row order. Anything not listed (radio, shopping, +1s, Irish and other regional feeds) is skipped.
+  var CH = [
+    [BBC1, "BBC One"], ["BBCTwoHD.uk", "BBC Two"], [ITV1, "ITV1"], ["Channel4London.uk", "Channel 4"], ["5.uk", "5"],
+    ["ITV2.uk", "ITV2"], ["BBCThreeHD.uk", "BBC Three"], ["BBCFourHD.uk", "BBC Four"], ["ITV3.uk", "ITV3"],
+    ["SkyMix.uk", "Sky Mix"], ["UAndYesterday.uk", "U&Yesterday"], ["E4.uk", "E4"], ["Film4.uk", "Film4"],
+    ["Really.uk", "Really"], ["More4.uk", "More4"], ["UAndDave.uk", "U&Dave"], ["UAndDrama.uk", "U&Drama"],
+    ["5USA.uk", "5USA"], ["UAndW.uk", "U&W"], ["ITV4.uk", "ITV4"], ["UAndEden.uk", "U&Eden"],
+    ["ITVQuiz.uk", "ITV Quiz"], ["E4Extra.uk", "E4 Extra"], ["5Star.uk", "5STAR"], ["5Action.uk", "5ACTION"],
+    ["5Select.uk", "5SELECT"], ["GreatTV.uk", "GREAT! tv"], ["GreatMovies.uk", "GREAT! movies"],
+    ["GreatAction.uk", "GREAT! action"], ["GreatMystery.uk", "GREAT! mystery"], ["GreatChristmas.uk", "GREAT! Christmas"],
+    ["SkyArts.uk", "Sky Arts"], ["DMAX.uk", "DMAX"], ["QuestHD.uk", "Quest"], ["QuestRed.uk", "Quest Red"],
+    ["Legend.uk", "Legend"], ["LegendXtra.uk", "Legend Xtra"], ["4seven.uk", "4seven"], ["Challenge.uk", "Challenge"],
+    ["FoodNetwork.uk", "Food Network"], ["TLC.uk", "TLC"], ["Blaze.uk", "Blaze"], ["TrueCrime.uk", "True Crime"],
+    ["TrueCrimeXtra.uk", "True Crime Xtra"], ["UAndDavejavu.uk", "U&Dave ja vu"], ["RewindTV.uk", "Rewind TV"],
+    ["TalkingPicturesTV.uk", "Talking Pictures"], ["PBSAmerica.uk", "PBS America"], ["TogetherTV.uk", "Together TV"],
+    ["Movies24.uk", "Movies24"], ["Movies24Plus.uk", "Movies24+"], ["WeDoTVMovies.uk", "wedotv Movies"],
+    ["ThatsTV.uk", "That's TV"], ["ThatsTV2.uk", "That's TV 2"], ["Thats60s.uk", "That's 60s"],
+    ["Thats70s.uk", "That's 70s"], ["Thats20thCentury.uk", "That's 20th Century"],
+    ["CBBC.uk", "CBBC"], ["CBeebies.uk", "CBeebies"],
+    ["BBCNews.uk", "BBC News"], ["BBCParliament.uk", "BBC Parliament"], ["SkyNews.uk", "Sky News"],
+    ["GBNews.uk", "GB News"], ["AlJazeeraEnglish.qa", "Al Jazeera"], ["France24English.fr", "France 24"],
+    ["EuronewsEnglish.fr", "Euronews"], ["NHKWorldJapan.jp", "NHK World"], ["TRTWorld.tr", "TRT World"],
+    ["BloombergTVEurope.uk", "Bloomberg"], ["CNBCEurope.uk", "CNBC"], ["NewsmaxTV.uk", "Newsmax"],
+    ["BBCScotland.uk", "BBC Scotland"], ["BBCAlba.uk", "BBC Alba"], ["S4C.uk", "S4C"],
+    ["Now70s.uk", "Now 70s"], ["Now80s.uk", "Now 80s"], ["Now90s.uk", "Now 90s & 00s"], ["NowRock.uk", "Now Rock"],
+    ["ClublandTV.uk", "Clubland TV"], ["GIGS.uk", "GIGS"]
+  ];
+  var MIN = 6e4, HOUR = 36e5, STALE = 4 * HOUR;
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { day: 0, q: "" };
+  var data = null; // { at, ch: { id: [ {s,e,n,ep,g,d,i} ] } }
+  var view = null;
+
+  var fDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
+  var fDay = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric" });
+  var fTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  function hm(ms) { return fTime.format(ms); }
+  function dayLabel(i) { return i === 0 ? "Today" : i === 1 ? "Tomorrow" : fDay.format(new Date(Date.now() + i * 864e5)); }
+  // UK midnight at the start of the day `offset` days from today
+  function dayStart(offset) {
+    var p = fDate.format(new Date(Date.now() + offset * 864e5)).split("-");
+    var t = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+    return hm(t) === "00:00" ? t : t - HOUR; // summer time
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  /* ---------- feed parsing (plain string scanning: far quicker than building an XML DOM) ---------- */
+  function unesc(s) {
+    if (s.indexOf("&") < 0) return s;
+    return s.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, function (m, k) {
+      k = k.toLowerCase();
+      if (k === "amp") return "&"; if (k === "lt") return "<"; if (k === "gt") return ">";
+      if (k === "quot") return '"'; if (k === "apos") return "'";
+      return String.fromCodePoint(k[1] === "x" ? parseInt(k.slice(2), 16) : +k.slice(1));
+    });
+  }
+  function stamp(v) { // "20261115203000 +0100"
+    var m = /(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)\s*([+-])?(\d\d)?(\d\d)?/.exec(v);
+    if (!m) return NaN;
+    var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    if (m[8]) t -= (m[7] === "-" ? -1 : 1) * (+m[8] * 60 + +m[9]) * MIN;
+    return t;
+  }
+  function pick(body, re) { var m = re.exec(body); return m ? unesc(m[1]).trim() : ""; }
+  function parse(xml) {
+    var want = {}, out = {}, floor = dayStart(0);
+    CH.forEach(function (c) { want[c[0]] = 1; });
+    var re = /<programme\s([^>]*)>([\s\S]*?)<\/programme>/g, m;
+    while ((m = re.exec(xml))) {
+      var id = /channel="([^"]*)"/.exec(m[1]);
+      if (!id || !want[id[1]]) continue;
+      var s = stamp((/start="([^"]*)"/.exec(m[1]) || [])[1] || ""), e = stamp((/stop="([^"]*)"/.exec(m[1]) || [])[1] || "");
+      if (isNaN(s) || isNaN(e) || e <= floor || e <= s) continue;
+      var b = m[2], n = pick(b, /<title[^>]*>([^<]*)/), d = pick(b, /<desc[^>]*>([^<]*)/), tags = [];
+      if (/^New:\s*/i.test(n)) { n = n.replace(/^New:\s*/i, ""); tags.push("New"); }
+      // some titles are cut short and finished at the start of the description
+      var cont = /^\.\.\.([^:]{1,90}):\s*([\s\S]*)$/.exec(d);
+      if (cont && /\.\.\.$/.test(n)) { n = n.replace(/\.\.\.$/, "").trim() + " " + cont[1].trim(); d = cont[2]; }
+      if (/<category[^>]*>\s*Movie/i.test(b)) tags.push("Film");
+      (out[id[1]] = out[id[1]] || []).push({
+        s: s, e: e, n: n || "Untitled", d: d, g: tags.join(" · "),
+        ep: pick(b, /<episode-num system="onscreen">([^<]*)/).replace(/^S(\d+)E(\d+)$/, "S$1 E$2"),
+        i: pick(b, /<icon src="([^"]*)"/)
+      });
+    }
+    Object.keys(out).forEach(function (k) { out[k].sort(function (a, b) { return a.s - b.s; }); });
+    return out;
+  }
+
+  /* ---------- cache (IndexedDB; silently skipped where the browser doesn't allow it) ---------- */
+  function db() {
+    return new Promise(function (res, rej) {
+      try {
+        var r = indexedDB.open("bishtv", 1);
+        r.onupgradeneeded = function () { r.result.createObjectStore("kv"); };
+        r.onsuccess = function () { res(r.result); };
+        r.onerror = function () { rej(r.error); };
+      } catch (e) { rej(e); }
+    });
+  }
+  function cacheGet() {
+    return db().then(function (d) {
+      return new Promise(function (res) {
+        var q = d.transaction("kv").objectStore("kv").get("epg");
+        q.onsuccess = function () { res(q.result && q.result.ch ? q.result : null); };
+        q.onerror = function () { res(null); };
+      });
+    }).catch(function () { return null; });
+  }
+  function cacheSet(v) {
+    db().then(function (d) { d.transaction("kv", "readwrite").objectStore("kv").put(v, "epg"); }).catch(function () {});
+  }
+
+  var busy = false;
+  function refresh() {
+    if (busy) return; busy = true;
+    fetch(FEED, { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    }).then(function (xml) {
+      var ch = parse(xml);
+      if (!Object.keys(ch).length) throw new Error("empty feed");
+      var had = !!data;
+      data = { at: Date.now(), ch: ch };
+      cacheSet(data); render(had);
+    }).catch(function () {
+      if (!data) message("Couldn’t load listings. Check your connection and try again.");
+    }).then(function () { busy = false; });
+  }
+  function start() {
+    message("Loading listings…");
+    cacheGet().then(function (c) {
+      if (c) { data = c; render(false); }
+      if (!c || Date.now() - c.at > STALE) refresh();
+    });
+  }
+  function message(text) {
+    view = null;
+    var s = $("scroller"); s.textContent = ""; s.appendChild(el("p", "msg", text));
+  }
+
+  function renderDays() {
+    var box = $("days"); box.textContent = "";
+    for (var i = 0; i < 7; i++) (function (i) {
+      var b = el("button", "", dayLabel(i)); b.type = "button";
+      b.setAttribute("aria-pressed", String(i === state.day));
+      b.onclick = function () { if (state.day !== i) { state.day = i; renderDays(); render(false); } };
+      box.appendChild(b);
+    })(i);
+    var a = el("a", "", "Data: Freeview-EPG"); a.href = "https://github.com/dp247/Freeview-EPG"; box.appendChild(a);
+  }
+
+  function render(keepScroll) {
+    if (!data) return;
+    var scroller = $("scroller"), prev = { x: scroller.scrollLeft, y: scroller.scrollTop };
+    var wide = window.matchMedia("(min-width: 760px)").matches;
+    var ppm = wide ? 6 : 5, chw = wide ? 132 : 78;
+    var t0 = dayStart(state.day), t1 = dayStart(state.day + 1);
+    var W = (t1 - t0) / MIN * ppm;
+    var x = function (ms) { return (ms - t0) / MIN * ppm; };
+
+    var canvas = el("div"); canvas.id = "canvas"; canvas.style.width = (chw + W) + "px";
+    var ruler = el("div", "ruler"); ruler.appendChild(el("div", "corner"));
+    var rtrack = el("div", "rtrack"); rtrack.style.width = W + "px";
+    for (var t = t0; t < t1; t += HOUR / 2) {
+      var mark = el("div", "hr" + ((t - t0) % HOUR ? "" : " h"), hm(t));
+      mark.style.left = x(t) + "px"; mark.style.width = 30 * ppm + "px";
+      rtrack.appendChild(mark);
+    }
+    var pill = el("div", "nowpill"); rtrack.appendChild(pill);
+    ruler.appendChild(rtrack); canvas.appendChild(ruler);
+    var line = el("div", "nowline"); canvas.appendChild(line);
+
+    var tiles = [], rows = [];
+    var grid = "repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px " + 30 * ppm + "px)";
+    CH.forEach(function (c) {
+      var list = data.ch[c[0]]; if (!list) return;
+      var row = el("div", "row"); row.appendChild(el("div", "ch", c[1]));
+      var track = el("div", "track"); track.style.width = W + "px"; track.style.backgroundImage = grid;
+      var mine = [];
+      for (var k = 0; k < list.length; k++) {
+        var p = list[k];
+        if (p.e <= t0) continue; if (p.s >= t1) break;
+        var next = list[k + 1];
+        var a = Math.max(p.s, t0), z = Math.min(p.e, t1, next && next.s > p.s ? next.s : Infinity);
+        if (z <= a) continue;
+        var w = (z - a) / MIN * ppm - 4;
+        var tile = el("div", "p" + (w < 34 ? " tiny" : ""));
+        tile.style.left = (x(a) + 2) + "px"; tile.style.width = Math.max(w, 6) + "px";
+        var inner = el("div", "in");
+        inner.appendChild(el("div", "n", p.n));
+        var m = el("div", "m"); m.appendChild(el("b", "", hm(p.s)));
+        if (p.g) m.appendChild(document.createTextNode(" · " + p.g));
+        inner.appendChild(m); tile.appendChild(inner);
+        tile.onclick = (function (p) { return function () { openSheet(p, c[1]); }; })(p);
+        track.appendChild(tile);
+        var rec = { el: tile, p: p, hay: (p.n + " " + p.g + " " + c[1]).toLowerCase() };
+        tiles.push(rec); mine.push(rec);
+      }
+      if (!mine.length) return;
+      row.appendChild(track); canvas.appendChild(row);
+      rows.push({ el: row, tiles: mine });
+    });
+    if (!rows.length) return message("No listings for this day yet.");
+
+    scroller.textContent = ""; scroller.appendChild(canvas);
+    view = { t0: t0, t1: t1, ppm: ppm, chw: chw, tiles: tiles, rows: rows, line: line, pill: pill };
+    tick(); filter();
+    if (keepScroll) { scroller.scrollLeft = prev.x; scroller.scrollTop = prev.y; }
+    else { scroller.scrollTop = 0; scroller.scrollLeft = startX(); }
+  }
+  // where the grid opens: at "now" today, 18:00 on other days
+  function startX() {
+    if (!view) return 0;
+    var target = state.day === 0 ? Date.now() : view.t0 + 18 * HOUR;
+    return Math.max(0, (target - view.t0) / MIN * view.ppm - 5);
+  }
+  function tick() {
+    var now = Date.now();
+    $("clock").textContent = hm(now);
+    if (!view) return;
+    var on = now >= view.t0 && now < view.t1;
+    view.line.style.display = view.pill.style.display = on ? "" : "none";
+    if (on) {
+      var nx = (now - view.t0) / MIN * view.ppm;
+      view.line.style.left = (view.chw + nx) + "px";
+      view.pill.style.left = nx + "px"; view.pill.textContent = hm(now);
+    }
+    view.tiles.forEach(function (t) {
+      var live = t.p.s <= now && now < t.p.e;
+      t.el.classList.toggle("live", live);
+      t.el.classList.toggle("past", t.p.e <= now);
+      if (live) t.el.style.setProperty("--pct", ((now - Math.max(t.p.s, view.t0)) / (t.p.e - Math.max(t.p.s, view.t0)) * 100).toFixed(1) + "%");
+    });
+  }
+  function filter() {
+    if (!view) return;
+    var q = state.q.toLowerCase();
+    view.rows.forEach(function (r) {
+      var any = false;
+      r.tiles.forEach(function (t) {
+        var hit = !q || t.hay.indexOf(q) >= 0;
+        t.el.classList.toggle("miss", !hit);
+        if (hit) any = true;
+      });
+      r.el.classList.toggle("hide", !any);
+    });
+  }
+
+  function openSheet(p, chan) {
+    $("s-ch").textContent = chan;
+    $("s-n").textContent = p.n;
+    $("s-e").textContent = p.ep; $("s-e").style.display = p.ep ? "" : "none";
+    var img = $("s-img");
+    img.style.display = "none"; img.removeAttribute("src");
+    if (p.i) { img.onload = function () { img.style.display = ""; }; img.src = p.i; }
+    var tags = $("s-tags"); tags.textContent = "";
+    tags.appendChild(el("span", "t", hm(p.s) + "–" + hm(p.e)));
+    tags.appendChild(el("span", "", Math.round((p.e - p.s) / MIN) + " min"));
+    if (p.g) p.g.split(" · ").forEach(function (g) { tags.appendChild(el("span", "", g)); });
+    $("s-d").textContent = p.d || "No description available.";
+    $("sheet").scrollTop = 0;
+    document.body.classList.add("open");
+  }
+  function closeSheet() { document.body.classList.remove("open"); }
+  $("shade").onclick = closeSheet;
+  $("sheet").querySelector(".grab").onclick = closeSheet;
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeSheet(); });
+
+  $("q").addEventListener("input", function () { state.q = this.value.trim(); filter(); });
+  $("now").onclick = function () {
+    if (state.day !== 0) { state.day = 0; renderDays(); render(false); return; }
+    $("scroller").scrollTo({ left: startX(), behavior: "smooth" });
+  };
+  setInterval(function () { if (!document.hidden) tick(); }, 30000);
+  var today = dayStart(0);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    if (dayStart(0) !== today) { today = dayStart(0); renderDays(); render(false); } else tick();
+    if (data && Date.now() - data.at > STALE) refresh();
+  });
+  var wasWide = window.matchMedia("(min-width: 760px)").matches;
+  window.addEventListener("resize", function () {
+    var w = window.matchMedia("(min-width: 760px)").matches;
+    if (w !== wasWide) { wasWide = w; render(false); }
+  });
+  try { for (var k = localStorage.length - 1; k >= 0; k--) { var key = localStorage.key(k); if (key && key.indexOf("tvg:") === 0) localStorage.removeItem(key); } } catch (e) {}
+
+  renderDays(); tick(); start();
+})();
+</script>
+</body>
+</html>
