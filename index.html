@@ -154,6 +154,13 @@
     color: var(--dim); font-size: 20px; cursor: grab; touch-action: none; }
   .oi.drag { background: var(--acid-soft); border-color: var(--acid); position: relative; z-index: 1; }
   .oi.drag .grip { color: var(--acid); }
+  #s-rem { display: block; width: 100%; height: 44px; margin-top: 8px; border-radius: 999px; background: none; cursor: pointer;
+    border: 1px solid rgba(200,255,61,.5); color: var(--acid); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+  #s-rem[aria-pressed="true"] { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
+  #s-rem:disabled { opacity: .5; }
+  #s-msg { margin: 8px 4px 0; font-size: 13px; color: #ffb4a8; }
+  #s-msg:empty { display: none; }
+  .p.rem .m::after { content: " \00b7 \1F514"; }
   #none { position: sticky; left: 0; width: 100vw; display: none; }
   #s-d { margin: 16px 0 0; font-size: 15.5px; line-height: 1.5; color: #d6d6d2; }
   #days a { flex: none; align-self: center; margin-left: 6px; font: 10px var(--mono); color: #5c5c63; white-space: nowrap; }
@@ -192,6 +199,8 @@
   <div id="s-e"></div>
   <div id="s-tags"></div>
   <div id="s-hl"><button id="hl-ep" type="button"></button><button id="hl-se" type="button"></button></div>
+  <button id="s-rem" type="button"></button>
+  <p id="s-msg" role="status"></p>
   <p id="s-d"></p>
 </div>
 
@@ -256,7 +265,7 @@
   function isHl(id, p) { return !!(hl.s[sKey(p)] || hl.e[eKey(id, p)]); }
   function markAll() {
     if (!view) return;
-    view.tiles.forEach(function (t) { t.el.classList.toggle("hl", isHl(t.id, t.p)); });
+    view.tiles.forEach(function (t) { t.el.classList.toggle("hl", isHl(t.id, t.p)); t.el.classList.toggle("rem", hasRem(t.id, t.p)); });
     filter();
   }
   var data = null; // { at, ch: { id: [ {s,e,n,ep,g,d,i} ] } }
@@ -347,6 +356,70 @@
     db().then(function (d) { d.transaction("kv", "readwrite").objectStore("kv").put(v, "epg"); }).catch(function () {});
   }
 
+  /* ---------- reminders: a push notification 5 minutes before a programme starts ----------
+     The Cloudflare Worker only stores "wake this phone at this minute". What to show is kept on this
+     device (IndexedDB "rem"), and the service worker (sw.js) reads it when the wake-up arrives. */
+  var PUSH = "https://bishtv-push.perham-ben.workers.dev", LEAD = 5 * MIN;
+  var rems = [], swReg = null;
+  if ("serviceWorker" in navigator) { try { swReg = navigator.serviceWorker.register("sw.js"); swReg.catch(function () {}); } catch (e) {} }
+  function remLoad() {
+    return db().then(function (d) {
+      return new Promise(function (res) {
+        var q = d.transaction("kv").objectStore("kv").get("rem");
+        q.onsuccess = function () { res(Array.isArray(q.result) ? q.result : []); };
+        q.onerror = function () { res([]); };
+      });
+    }).catch(function () { return []; }).then(function (list) {
+      var now = Date.now();
+      rems = list.filter(function (r) { return r.s > now; });
+      return rems;
+    });
+  }
+  function remSave() {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(rems, "rem");
+        t.oncomplete = res; t.onerror = function () { rej(t.error); };
+      });
+    });
+  }
+  function hasRem(id, p) { var k = id + "|" + p.s; return rems.some(function (r) { return r.id === k; }); }
+  function b64bytes(s) {
+    var bin = atob(s.replace(/-/g, "+").replace(/_/g, "/")), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function subscription() {
+    if (!swReg || !("PushManager" in window) || !("Notification" in window)) return Promise.reject(new Error("Notifications aren\u2019t available here. Open bishTV from its installed app or web address."));
+    return Notification.requestPermission().then(function (perm) {
+      if (perm !== "granted") throw new Error("Notifications are blocked for bishTV. Allow them in the app\u2019s site settings, then try again.");
+      return swReg;
+    }).then(function () { return navigator.serviceWorker.ready; }).then(function (reg) {
+      return reg.pushManager.getSubscription().then(function (sub) {
+        if (sub) return sub;
+        return fetch(PUSH + "/key").then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (k) {
+          return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64bytes(k.key) });
+        });
+      });
+    });
+  }
+  function remToggle(id, p, chan) {
+    var k = id + "|" + p.s;
+    return subscription().then(function (sub) {
+      return remLoad().then(function () {
+        var old = rems.filter(function (r) { return r.id === k; })[0];
+        return fetch(PUSH + "/remind", {
+          method: old ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint, at: old ? old.at : p.s - LEAD })
+        }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (res) {
+          rems = rems.filter(function (r) { return r.id !== k; });
+          if (!old) rems.push({ id: k, at: res.at, s: p.s, n: p.n, ch: chan });
+          return remSave();
+        });
+      });
+    });
+  }
+
   var busy = false;
   function refresh() {
     if (busy) return; busy = true;
@@ -365,7 +438,7 @@
   }
   function start() {
     message("Loading listings…");
-    cacheGet().then(function (c) {
+    remLoad().then(cacheGet).then(function (c) {
       if (c) { data = c; render(false); }
       if (!c || Date.now() - c.at > STALE) refresh();
     });
@@ -437,6 +510,7 @@
         tile.onclick = (function (p) { return function () { openSheet(p, c); }; })(p);
         track.appendChild(tile);
         if (isHl(c[0], p)) tile.classList.add("hl");
+        if (hasRem(c[0], p)) tile.classList.add("rem");
         var rec = { el: tile, p: p, id: c[0], hay: (p.n + " " + p.g + " " + c[1]).toLowerCase() };
         tiles.push(rec); mine.push(rec);
       }
@@ -568,8 +642,20 @@
     if (hl.s[k]) delete hl.s[k]; else hl.s[k] = 1;
     hlSave(); syncHl(); markAll();
   };
+  function syncRem() {
+    var b = $("s-rem"), on = hasRem(cur.id, cur.p);
+    b.style.display = on || cur.p.s > Date.now() + MIN ? "" : "none";
+    b.setAttribute("aria-pressed", String(on));
+    b.textContent = on ? "\uD83D\uDD14 Reminder set \u00b7 tap to cancel" : "\uD83D\uDD14 Remind me 5 min before";
+  }
+  $("s-rem").onclick = function () {
+    var b = this, mine = cur; b.disabled = true; $("s-msg").textContent = "";
+    remToggle(mine.id, mine.p, mine.ch).catch(function (e) {
+      if (cur === mine) $("s-msg").textContent = (e && e.message) || "Couldn\u2019t reach the reminder service. Check your connection and try again.";
+    }).then(function () { b.disabled = false; if (cur === mine) syncRem(); markAll(); });
+  };
   function openSheet(p, c) {
-    var chan = c[1]; cur = { p: p, id: c[0] }; syncHl();
+    var chan = c[1]; cur = { p: p, id: c[0], ch: chan }; syncHl(); syncRem(); $("s-msg").textContent = "";
     $("s-ch").textContent = chan;
     $("s-n").textContent = p.n;
     $("s-e").textContent = p.ep; $("s-e").style.display = p.ep ? "" : "none";
