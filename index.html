@@ -69,6 +69,8 @@
     border-bottom: 1px solid var(--faint); }
   .corner { position: sticky; left: 0; z-index: 5; flex: none; width: var(--chw);
     background: #09090b; border-right: 1px solid var(--faint); }
+  .corner button { width: 100%; height: 100%; border: 0; background: none; color: var(--dim); cursor: pointer;
+    font: 700 10px var(--mono); letter-spacing: .1em; }
   .rtrack { position: relative; flex: none; }
   .hr { position: absolute; top: 0; height: 100%; display: flex; align-items: center;
     padding-left: 8px; font: 600 11px var(--mono); color: var(--dim); letter-spacing: .04em;
@@ -132,6 +134,26 @@
   #s-hl button { flex: 1; height: 44px; border-radius: 999px; border: 1px solid rgba(164,139,255,.5); background: none;
     color: var(--vio); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
   #s-hl button[aria-pressed="true"] { background: var(--vio); border-color: var(--vio); color: #0a0a0a; }
+  /* channel order panel */
+  #order { position: fixed; inset: 0; z-index: 30; display: none; flex-direction: column; background: #09090b;
+    -webkit-user-select: none; user-select: none; }
+  body.ordering #order { display: flex; }
+  .obar { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 14px 12px; border-bottom: 1px solid var(--faint); }
+  .obar h2 { flex: 1; margin: 0; font: 800 22px/1 var(--display); letter-spacing: -.03em; }
+  .obar button { height: 38px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--faint); background: none;
+    color: var(--ink); font: 700 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+  .obar #o-done { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
+  .ohint { flex: none; margin: 0; padding: 10px 16px; font: 11px var(--mono); color: var(--dim); letter-spacing: .03em; }
+  #o-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px calc(20px + env(safe-area-inset-bottom));
+    max-width: 560px; width: 100%; margin: 0 auto; }
+  .oi { display: flex; align-items: center; height: 52px; margin-bottom: 6px; padding-left: 14px; border-radius: 14px;
+    background: var(--tile); border: 1px solid var(--faint); font: 650 15px var(--display); }
+  .oi .num { width: 30px; font: 500 11px var(--mono); color: var(--dim); }
+  .oi .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .oi .grip { flex: none; width: 60px; height: 100%; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); font-size: 20px; cursor: grab; touch-action: none; }
+  .oi.drag { background: var(--acid-soft); border-color: var(--acid); position: relative; z-index: 1; }
+  .oi.drag .grip { color: var(--acid); }
   #none { position: sticky; left: 0; width: 100vw; display: none; }
   #s-d { margin: 16px 0 0; font-size: 15.5px; line-height: 1.5; color: #d6d6d2; }
   #days a { flex: none; align-self: center; margin-left: 6px; font: 10px var(--mono); color: #5c5c63; white-space: nowrap; }
@@ -156,6 +178,11 @@
   <div id="days"></div>
 </header>
 <div id="scroller"><p class="msg">Loading listings…</p></div>
+<div id="order" role="dialog" aria-modal="true" aria-labelledby="o-title">
+  <div class="obar"><h2 id="o-title">Channel order</h2><button id="o-reset" type="button">Reset</button><button id="o-done" type="button">Done</button></div>
+  <p class="ohint">Drag the handle on the right to move a channel.</p>
+  <div id="o-list"></div>
+</div>
 <div id="shade"></div>
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="s-n">
   <div class="grab"></div>
@@ -202,6 +229,17 @@
     ["ClublandTV.uk", "Clubland TV"], ["GIGS.uk", "GIGS"]
   ];
   var MIN = 6e4, HOUR = 36e5, STALE = 4 * HOUR;
+  /* ---------- custom channel order (saved ids first, anything new falls in behind in the default order) ---------- */
+  var order = [];
+  try { var so = JSON.parse(localStorage.getItem("bishtv:order")); if (Array.isArray(so)) order = so; } catch (e) {}
+  function chans() {
+    if (!order.length) return CH;
+    var by = {}, out = [];
+    CH.forEach(function (c) { by[c[0]] = c; });
+    order.forEach(function (id) { if (by[id]) { out.push(by[id]); delete by[id]; } });
+    CH.forEach(function (c) { if (by[c[0]]) out.push(c); });
+    return out;
+  }
   var $ = function (id) { return document.getElementById(id); };
   var state = { day: 0, q: "", only: false };
   /* ---------- highlights: single showings (channel + start time) and whole series (by title) ---------- */
@@ -362,7 +400,9 @@
     var x = function (ms) { return (ms - t0) / MIN * ppm; };
 
     var canvas = el("div"); canvas.id = "canvas"; canvas.style.width = (chw + W) + "px";
-    var ruler = el("div", "ruler"); ruler.appendChild(el("div", "corner"));
+    var ruler = el("div", "ruler"), corner = el("div", "corner"), ob = el("button", "", "\u21C5 ORDER");
+    ob.type = "button"; ob.setAttribute("aria-label", "Change channel order"); ob.onclick = openOrder;
+    corner.appendChild(ob); ruler.appendChild(corner);
     var rtrack = el("div", "rtrack"); rtrack.style.width = W + "px";
     for (var t = t0; t < t1; t += HOUR / 2) {
       var mark = el("div", "hr" + ((t - t0) % HOUR ? "" : " h"), hm(t));
@@ -375,7 +415,7 @@
 
     var tiles = [], rows = [];
     var grid = "repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px " + 30 * ppm + "px)";
-    CH.forEach(function (c) {
+    chans().forEach(function (c) {
       var list = data.ch[c[0]]; if (!list) return;
       var row = el("div", "row"); row.appendChild(el("div", "ch", c[1]));
       var track = el("div", "track"); track.style.width = W + "px"; track.style.backgroundImage = grid;
@@ -456,6 +496,60 @@
       none.textContent = state.only && !q ? "Nothing highlighted on this day. Tap a programme to highlight it." : "Nothing matches.";
     }
   }
+
+  /* ---------- channel order panel ---------- */
+  var OH = 58; // item height + gap
+  function fillOrder(list) {
+    var box = $("o-list"); box.textContent = "";
+    list.forEach(function (c) {
+      var it = el("div", "oi"); it.dataset.id = c[0];
+      it.appendChild(el("span", "num")); it.appendChild(el("span", "nm", c[1])); it.appendChild(el("span", "grip", "\u2261"));
+      box.appendChild(it);
+    });
+    renumber();
+  }
+  function renumber() {
+    var kids = $("o-list").children;
+    for (var i = 0; i < kids.length; i++) kids[i].firstChild.textContent = i + 1;
+  }
+  function openOrder() { fillOrder(chans()); $("o-list").scrollTop = 0; document.body.classList.add("ordering"); }
+  $("o-reset").onclick = function () { fillOrder(CH); };
+  $("o-done").onclick = function () {
+    order = Array.prototype.map.call($("o-list").children, function (k) { return k.dataset.id; });
+    var same = order.every(function (id, i) { return CH[i] && CH[i][0] === id; });
+    try { if (same) { order = []; localStorage.removeItem("bishtv:order"); } else localStorage.setItem("bishtv:order", JSON.stringify(order)); } catch (e) {}
+    document.body.classList.remove("ordering");
+    render(true);
+  };
+  (function () {
+    var box = $("o-list"), item = null, lastY = 0, raf = 0;
+    function place() {
+      var r = box.getBoundingClientRect(), kids = box.children;
+      var idx = Math.max(0, Math.min(kids.length - 1, Math.floor((lastY - r.top + box.scrollTop) / OH)));
+      var at = Array.prototype.indexOf.call(kids, item);
+      if (idx !== at) { box.insertBefore(item, idx > at ? kids[idx].nextSibling : kids[idx]); renumber(); }
+    }
+    function loop() {
+      raf = 0; if (!item) return;
+      var r = box.getBoundingClientRect(), edge = 70, v = 0;
+      if (lastY < r.top + edge) v = -Math.ceil((r.top + edge - lastY) / 5);
+      else if (lastY > r.bottom - edge) v = Math.ceil((lastY - (r.bottom - edge)) / 5);
+      if (v) { box.scrollTop += v; place(); raf = requestAnimationFrame(loop); }
+    }
+    box.addEventListener("pointerdown", function (e) {
+      var g = e.target.closest && e.target.closest(".grip"); if (!g) return;
+      item = g.parentNode; item.classList.add("drag"); lastY = e.clientY;
+      try { box.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    });
+    box.addEventListener("pointermove", function (e) {
+      if (!item) return;
+      lastY = e.clientY; place();
+      if (!raf) raf = requestAnimationFrame(loop);
+    });
+    function end() { if (item) { item.classList.remove("drag"); item = null; } }
+    box.addEventListener("pointerup", end); box.addEventListener("pointercancel", end);
+  })();
 
   var cur = null;
   function syncHl() {
