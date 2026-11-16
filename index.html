@@ -154,6 +154,9 @@
     color: var(--dim); font-size: 20px; cursor: grab; touch-action: none; }
   .oi.drag { background: var(--acid-soft); border-color: var(--acid); position: relative; z-index: 1; }
   .oi.drag .grip { color: var(--acid); }
+  #s-rem { display: flex; align-items: center; justify-content: center; height: 44px; margin-top: 8px; border-radius: 999px;
+    border: 1px solid rgba(200,255,61,.5); color: var(--acid); text-decoration: none;
+    font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
   #none { position: sticky; left: 0; width: 100vw; display: none; }
   #s-d { margin: 16px 0 0; font-size: 15.5px; line-height: 1.5; color: #d6d6d2; }
   #days a { flex: none; align-self: center; margin-left: 6px; font: 10px var(--mono); color: #5c5c63; white-space: nowrap; }
@@ -192,6 +195,7 @@
   <div id="s-e"></div>
   <div id="s-tags"></div>
   <div id="s-hl"><button id="hl-ep" type="button"></button><button id="hl-se" type="button"></button></div>
+  <a id="s-rem" target="_blank" rel="noopener">⏰ Remind me · add to calendar</a>
   <p id="s-d"></p>
 </div>
 
@@ -581,6 +585,17 @@
     tags.appendChild(el("span", "", Math.round((p.e - p.s) / MIN) + " min"));
     if (p.g) p.g.split(" · ").forEach(function (g) { tags.appendChild(el("span", "", g)); });
     $("s-d").textContent = p.d || "No description available.";
+    // reminder: a pre-filled Google Calendar event, so the phone's calendar does the notifying
+    var rem = $("s-rem");
+    if (p.e > Date.now()) {
+      var z = function (ms) { return new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, ""); };
+      rem.href = "https://calendar.google.com/calendar/render?action=TEMPLATE" +
+        "&text=" + encodeURIComponent(p.n + " \u2013 " + chan) +
+        "&dates=" + z(p.s) + "/" + z(p.e) +
+        "&details=" + encodeURIComponent([p.ep, p.d].filter(Boolean).join("\n").slice(0, 600)) +
+        "&location=" + encodeURIComponent(chan);
+      rem.style.display = "";
+    } else rem.style.display = "none";
     $("sheet").scrollTop = 0;
     document.body.classList.add("open");
   }
