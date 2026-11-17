@@ -134,6 +134,23 @@
   #s-hl button { flex: 1; height: 44px; border-radius: 999px; border: 1px solid rgba(164,139,255,.5); background: none;
     color: var(--vio); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
   #s-hl button[aria-pressed="true"] { background: var(--vio); border-color: var(--vio); color: #0a0a0a; }
+  /* week-wide search results */
+  #results { flex: 1; min-height: 0; overflow-y: auto; display: none; border-top: 1px solid var(--faint);
+    -webkit-user-select: none; user-select: none; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  body.searching #results { display: block; }
+  body.searching #scroller { display: none; }
+  #results > * { max-width: 720px; margin-left: auto; margin-right: auto; }
+  .rday { position: sticky; top: 0; z-index: 1; padding: 10px 14px 8px; font: 700 11px var(--mono); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--acid); background: rgba(9,9,11,.82);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .res { display: grid; grid-template-columns: 54px 1fr; gap: 0 8px; padding: 11px 14px; border-bottom: 1px solid var(--faint); cursor: pointer; }
+  .res .rt { font: 600 12px var(--mono); color: var(--dim); padding-top: 3px; }
+  .res.live .rt { color: var(--acid); }
+  .res .rn { font: 650 15.5px/1.2 var(--display); letter-spacing: -.015em; }
+  .res.hl .rn::before { content: "\2605\00a0"; color: var(--vio); }
+  .res.rem .rn::after { content: "\00a0\1F514"; font-size: 12px; }
+  .res .rm { margin-top: 4px; font: 500 10.5px var(--mono); color: var(--dim); letter-spacing: .03em; text-transform: uppercase; }
+  .res .rm b { color: var(--ink); font-weight: 600; }
   /* channel order panel */
   #order { position: fixed; inset: 0; z-index: 30; display: none; flex-direction: column; background: #09090b;
     -webkit-user-select: none; user-select: none; }
@@ -188,6 +205,7 @@
   <div id="days"></div>
 </header>
 <div id="scroller"><p class="msg">Loading listings…</p></div>
+<div id="results"></div>
 <div id="order" role="dialog" aria-modal="true" aria-labelledby="o-title">
   <div class="obar"><h2 id="o-title">Channel order</h2><button id="o-reset" type="button">Reset</button><button id="o-done" type="button">Done</button></div>
   <p class="ohint">Drag the handle on the right to move a channel.</p>
@@ -270,6 +288,7 @@
   function eKey(id, p) { return id + "|" + p.s; }
   function isHl(id, p) { return !!(hl.s[sKey(p)] || hl.e[eKey(id, p)]); }
   function markAll() {
+    search();
     if (!view) return;
     view.tiles.forEach(function (t) { t.el.classList.toggle("hl", isHl(t.id, t.p)); t.el.classList.toggle("rem", hasRem(t.id, t.p)); });
     filter();
@@ -488,7 +507,7 @@
       if (!Object.keys(ch).length) throw new Error("empty feed");
       var had = !!data;
       data = { at: Date.now(), ch: ch };
-      cacheSet(data); render(had); seriesSync().catch(function () {});
+      cacheSet(data); render(had); search(); seriesSync().catch(function () {});
     }).catch(function () {
       if (!data) message("Couldn’t load listings. Check your connection and try again.");
     }).then(function () { busy = false; });
@@ -509,7 +528,7 @@
     var box = $("days"); box.textContent = "";
     var star = el("button", "star", "\u2605 Highlights"); star.type = "button";
     star.setAttribute("aria-pressed", String(state.only));
-    star.onclick = function () { state.only = !state.only; star.setAttribute("aria-pressed", String(state.only)); filter(); };
+    star.onclick = function () { state.only = !state.only; star.setAttribute("aria-pressed", String(state.only)); filter(); search(); };
     box.appendChild(star);
     for (var i = 0; i < 7; i++) (function (i) {
       var b = el("button", "", dayLabel(i)); b.type = "button";
@@ -610,7 +629,7 @@
   }
   function filter() {
     if (!view) return;
-    var q = state.q.toLowerCase(), shown = 0;
+    var q = "", shown = 0; // text search has its own week-wide results list (see search())
     view.rows.forEach(function (r) {
       var any = false;
       r.tiles.forEach(function (t) {
@@ -753,7 +772,55 @@
   $("sheet").querySelector(".grab").onclick = closeSheet;
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeSheet(); });
 
-  $("q").addEventListener("input", function () { state.q = this.value.trim(); filter(); });
+  /* ---------- search: every upcoming showing across the whole week, as a list ---------- */
+  var MAXRES = 200;
+  function search() {
+    var words = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+    var on = !!data && state.q.length >= 2;
+    document.body.classList.toggle("searching", on);
+    if (!on) return;
+    var now = Date.now(), hits = [], total = 0;
+    chans().forEach(function (c) {
+      var cl = c[1].toLowerCase();
+      (data.ch[c[0]] || []).forEach(function (p) {
+        if (p.e <= now) return;
+        var hay = (p.n + " " + p.ep + " " + p.g).toLowerCase() + " " + cl;
+        for (var i = 0; i < words.length; i++) if (hay.indexOf(words[i]) < 0) return;
+        if (state.only && !isHl(c[0], p)) return;
+        total++; hits.push({ p: p, c: c });
+      });
+    });
+    hits.sort(function (a, b) { return a.p.s - b.p.s; });
+    hits = hits.slice(0, MAXRES);
+    var box = $("results"), keep = box.scrollTop, frag = document.createDocumentFragment();
+    var starts = []; for (var d = 0; d < 9; d++) starts.push(dayStart(d));
+    var lastDay = -1;
+    hits.forEach(function (h) {
+      var p = h.p, day = 0;
+      while (day < 8 && starts[day + 1] <= p.s) day++;
+      if (day !== lastDay) { lastDay = day; frag.appendChild(el("div", "rday", dayLabel(day))); }
+      var live = p.s <= now;
+      var row = el("div", "res" + (live ? " live" : "") + (isHl(h.c[0], p) ? " hl" : "") + (hasRem(h.c[0], p) ? " rem" : ""));
+      row.appendChild(el("div", "rt", live ? "NOW" : hm(p.s)));
+      var body = el("div");
+      body.appendChild(el("div", "rn", p.n));
+      var m = el("div", "rm"); m.appendChild(el("b", "", h.c[1]));
+      var extra = [p.ep, p.g].filter(Boolean).join(" \u00b7 ");
+      if (extra) m.appendChild(document.createTextNode(" \u00b7 " + extra));
+      body.appendChild(m); row.appendChild(body);
+      row.onclick = function () { openSheet(p, h.c); };
+      frag.appendChild(row);
+    });
+    if (!hits.length) frag.appendChild(el("p", "msg", state.only ? "No highlighted showings match in the next 7 days." : "Nothing matches in the next 7 days."));
+    else if (total > MAXRES) frag.appendChild(el("p", "msg", "Showing the first " + MAXRES + " of " + total + ". Keep typing to narrow it down."));
+    box.textContent = ""; box.appendChild(frag);
+    box.scrollTop = search.last === state.q ? keep : 0; search.last = state.q;
+  }
+  var qTimer = 0;
+  $("q").addEventListener("input", function () {
+    state.q = this.value.trim();
+    clearTimeout(qTimer); qTimer = setTimeout(search, 120);
+  });
   $("now").onclick = function () {
     if (state.day !== 0) { state.day = 0; renderDays(); render(false); return; }
     $("scroller").scrollTo({ left: startX(), behavior: "smooth" });
