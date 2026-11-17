@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#09090b">
+<meta name="theme-color" content="#0e0c12">
+<script>/* pick light or dark before anything draws, to avoid a flash */
+try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
+  if (t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches)) document.documentElement.className = "light"; } catch (e) {}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -13,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
-  href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap">
+  href="https://fonts.googleapis.com/css2?family=Outfit:wght@400..900&display=swap">
 <style>
   :root {
     --bg: #09090b; --ink: #f4f4f1; --dim: #8b8b93; --faint: rgba(255,255,255,.07);
@@ -215,12 +218,92 @@
     .ch { font-size: 14px; padding-left: 20px; }
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* ---------- Bishmas theme: dark (default) and light, picked by the phone or in Settings ---------- */
+  :root {
+    --teal: #1FB5AB; --green: #95C83D; --purple: #8559A5; --yellow: #F2D012; --pink: #DE4D86; --orange: #F29A21;
+    --bg: #0e0c12; --ink: #f6f3f8; --dim: #9a93a3; --faint: rgba(255,255,255,.08); --tile: rgba(255,255,255,.06);
+    --acid: #F2D012; --acid-soft: rgba(31,181,171,.30); --vio: #b48ae0; --vio-soft: rgba(133,89,165,.42);
+    --teal-ink: #3fd6cb; --vio-text: #c9a3ee; --vio-line: rgba(180,138,224,.45); --orange-text: #F29A21; --line: rgba(255,255,255,.14);
+    --panel: #0e0c12; --glass: rgba(14,12,18,.82); --sheet: rgba(26,22,32,.92); --sel: #1d1924; --body2: #d9d4de;
+    --grid: rgba(255,255,255,.05); --hover: rgba(255,255,255,.1); --day-bg: #F2D012; --day-ink: #111; --head: #F2D012;
+    --warn: #ffcf9e; --err: #ffb4a8; --rem-ink: #06201e;
+    --display: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  html.light {
+    --bg: #ffffff; --ink: #221d28; --dim: #746d7d; --faint: rgba(34,29,40,.10); --tile: #f4f2f6;
+    --acid: #DE4D86; --acid-soft: rgba(31,181,171,.22); --vio: #8559A5; --vio-soft: rgba(133,89,165,.18);
+    --teal-ink: #118d85; --vio-text: #7a4f9b; --vio-line: rgba(133,89,165,.45); --orange-text: #c46f00; --line: rgba(34,29,40,.18);
+    --panel: #ffffff; --glass: rgba(255,255,255,.9); --sheet: rgba(255,255,255,.96); --sel: #ebe8ef; --body2: #3b3542;
+    --grid: rgba(34,29,40,.06); --hover: #ece9ef; --day-bg: #221d28; --day-ink: #fff; --head: #d23f78;
+    --warn: #b8650a; --err: #c0392b; --rem-ink: #fff;
+    color-scheme: light;
+  }
+  body { background: var(--bg); color: var(--ink); }
+  body::before { background:
+    radial-gradient(55% 40% at 95% -8%, rgba(222,77,134,.38), transparent 70%),
+    radial-gradient(45% 35% at -5% 0%, rgba(31,181,171,.22), transparent 70%),
+    radial-gradient(60% 45% at 50% 112%, rgba(133,89,165,.30), transparent 70%); }
+  html.light body::before, html.light body::after { display: none; }
+  h1 { font: 800 28px/1 var(--display); letter-spacing: -.045em; }
+  h1 .b { color: var(--teal); } h1 .i { color: var(--green); } h1 .s { color: var(--purple); } h1 .h { color: var(--orange); }
+  h1 em { color: var(--pink); }
+  #q { background: var(--tile); color: var(--ink); border-color: var(--faint); }
+  #q:focus { border-color: var(--pink); }
+  #now, #toast { background: var(--pink); color: #fff; }
+  #now i { background: #fff; }
+  #days button { color: var(--dim); border-color: var(--faint); }
+  #days button[aria-pressed="true"] { background: var(--day-bg); border-color: var(--day-bg); color: var(--day-ink); }
+  #days button.star { color: var(--vio-text); border-color: var(--vio-line); }
+  #days button.star[aria-pressed="true"] { background: var(--purple); border-color: var(--purple); color: #fff; }
+  #days button.films { color: var(--orange-text); border-color: rgba(242,154,33,.45); }
+  #days button.films[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); color: #111; }
+  #days a { color: var(--dim); }
+  .ruler { background: var(--glass); }
+  .corner, .ch { background: var(--panel); }
+  .hr.h { color: var(--ink); }
+  .ch { box-shadow: inset 4px 0 0 var(--cc, transparent); }
+  .nowpill { background: var(--pink); color: #fff; }
+  .nowline { background: var(--pink); box-shadow: 0 0 14px rgba(222,77,134,.55); }
+  html.light .nowline { box-shadow: none; }
+  .p:hover { background: var(--hover); }
+  .p.live { border-color: var(--teal); }
+  .live .m b { color: var(--teal-ink); }
+  .p.hl { border-color: var(--vio); }
+  .p.hl .n::before, .res.hl .rn::before { color: var(--vio); }
+  .rday { color: var(--head); background: var(--glass); }
+  .res.live .rt { color: var(--teal-ink); }
+  .res .rm b { color: var(--ink); }
+  #stale { color: var(--warn); }
+  #sheet { background: var(--sheet); border-color: var(--faint); }
+  html.light #shade { background: rgba(34,29,40,.35); }
+  .grab { background: var(--line); }
+  #s-ch { color: var(--head); }
+  #s-d { color: var(--body2); }
+  #s-tags span { border-color: var(--line); }
+  #s-tags span.t { background: var(--day-bg); border-color: var(--day-bg); color: var(--day-ink); }
+  #s-hl button { border-color: var(--vio-line); color: var(--vio-text); }
+  #s-hl button[aria-pressed="true"] { background: var(--purple); border-color: var(--purple); color: #fff; }
+  #s-rm button { border-color: rgba(31,181,171,.6); color: var(--teal-ink); }
+  #s-rm button[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--rem-ink); }
+  #s-msg { color: var(--err); }
+  #order { background: var(--bg); }
+  .obar button { color: var(--ink); border-color: var(--faint); }
+  .obar #o-done { background: var(--pink); border-color: var(--pink); color: #fff; }
+  .osec { color: var(--head); }
+  .osec button { color: var(--ink); border-color: var(--faint); }
+  .seg button { color: var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--day-bg); border-color: var(--day-bg); color: var(--day-ink); }
+  .osel select { background: var(--sel); color: var(--ink); }
+  .oi.drag { border-color: var(--teal); }
+  .oi.drag .grip { color: var(--teal-ink); }
 </style>
 </head>
 <body>
 <header>
   <div class="top">
-    <h1>bish<em>TV</em></h1>
+    <h1><span class="b">b</span><span class="i">i</span><span class="s">s</span><span class="h">h</span><em>TV</em></h1>
     <input id="q" type="search" placeholder="Search shows" autocomplete="off" aria-label="Search">
     <button id="now" type="button"><i></i><span id="clock">NOW</span></button>
   </div>
@@ -232,6 +315,8 @@
 <div id="order" role="dialog" aria-modal="true" aria-labelledby="o-title">
   <div class="obar"><h2 id="o-title">Settings</h2><button id="o-done" type="button">Done</button></div>
   <div id="o-body">
+    <div class="osec">Appearance</div>
+    <div class="seg" id="o-theme"></div>
     <div class="osec">Reminder notice</div>
     <div class="seg" id="o-lead"></div>
     <p class="onote">Applies to reminders you set from now on.</p>
@@ -276,16 +361,27 @@
     ["ITV1YorkshireEast.uk", "Yorkshire (East)"], ["ITV1TyneTees.uk", "Tyne Tees"], ["ITV1Border.uk", "Border"], ["ITV1North.uk", "North"],
     ["ITV1Wales.uk", "Wales"], ["STVCentral.uk", "STV Central"], ["STVNorth.uk", "STV North"], ["UTV.uk", "UTV"]];
   var LEADS = [5, 10, 15, 30];
-  var set = { lead: 5, bbc: "BBCOneWest.uk", itv: "ITV1WestCountry.uk" };
+  var THEMES = [["auto", "Match phone"], ["dark", "Dark"], ["light", "Light"]];
+  var set = { lead: 5, bbc: "BBCOneWest.uk", itv: "ITV1WestCountry.uk", theme: "auto" };
   try {
     var ss = JSON.parse(localStorage.getItem("bishtv:set")) || {};
     var known = function (list, id) { return list.some(function (r) { return r[0] === id; }); };
     if (LEADS.indexOf(ss.lead) >= 0) set.lead = ss.lead;
     if (known(BBCS, ss.bbc)) set.bbc = ss.bbc;
     if (known(ITVS, ss.itv)) set.itv = ss.itv;
+    if (known(THEMES, ss.theme)) set.theme = ss.theme;
   } catch (e) {}
   function itvName(id) { return /^STV/.test(id) ? "STV" : /^UTV/.test(id) ? "UTV" : "ITV1"; }
   var BBC1 = set.bbc, ITV1 = set.itv;
+  var PAL = ["#1FB5AB", "#95C83D", "#8559A5", "#F2D012", "#DE4D86", "#F29A21"];
+  var lightMQ = window.matchMedia("(prefers-color-scheme: light)");
+  function applyTheme() {
+    var light = set.theme === "light" || (set.theme === "auto" && lightMQ.matches);
+    document.documentElement.classList.toggle("light", light);
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = light ? "#ffffff" : "#0e0c12";
+  }
+  applyTheme();
+  if (lightMQ.addEventListener) lightMQ.addEventListener("change", applyTheme); else if (lightMQ.addListener) lightMQ.addListener(applyTheme);
   // Channels shown, in row order. Anything not listed (radio, shopping, +1s, Irish and other regional feeds) is skipped.
   var CH = [
     [BBC1, "BBC One"], ["BBCTwoHD.uk", "BBC Two"], [ITV1, itvName(ITV1)], ["Channel4London.uk", "Channel 4"], ["5.uk", "5"],
@@ -609,7 +705,7 @@
     star.setAttribute("aria-pressed", String(state.only));
     star.onclick = function () { state.only = !state.only; star.setAttribute("aria-pressed", String(state.only)); filter(); search(); };
     box.appendChild(star);
-    var films = el("button", "", "\u25B6 Films"); films.type = "button";
+    var films = el("button", "films", "\u25B6 Films"); films.type = "button";
     films.setAttribute("aria-pressed", String(state.films));
     films.onclick = function () { state.films = !state.films; renderDays(); search(); };
     box.appendChild(films);
@@ -649,10 +745,11 @@
     var line = el("div", "nowline"); canvas.appendChild(line);
 
     var tiles = [], rows = [];
-    var grid = "repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px " + 30 * ppm + "px)";
+    var grid = "repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px " + 30 * ppm + "px)";
     chans().forEach(function (c) {
       var list = data.ch[c[0]]; if (!list) return;
-      var row = el("div", "row"); row.appendChild(el("div", "ch", c[1]));
+      var row = el("div", "row"), chEl = el("div", "ch", c[1]);
+      chEl.style.setProperty("--cc", PAL[rows.length % PAL.length]); row.appendChild(chEl);
       var track = el("div", "track"); track.style.width = W + "px"; track.style.backgroundImage = grid;
       var mine = [];
       for (var k = 0; k < list.length; k++) {
@@ -761,7 +858,19 @@
     sel.textContent = "";
     list.forEach(function (r) { var o = el("option", "", r[1]); o.value = r[0]; o.selected = r[0] === cur; sel.appendChild(o); });
   }
+  function fillTheme() {
+    var box = $("o-theme"); box.textContent = "";
+    THEMES.forEach(function (t) {
+      var b = el("button", "", t[1]); b.type = "button"; b.setAttribute("aria-pressed", String(t[0] === set.theme));
+      b.onclick = function () { // takes effect straight away
+        set.theme = t[0]; applyTheme(); fillTheme();
+        try { localStorage.setItem("bishtv:set", JSON.stringify(set)); } catch (e) {}
+      };
+      box.appendChild(b);
+    });
+  }
   function openOrder() {
+    fillTheme();
     pendLead = set.lead; fillLead();
     fillSelect($("o-bbc"), BBCS, set.bbc); fillSelect($("o-itv"), ITVS, set.itv);
     fillOrder(chans()); $("o-body").scrollTop = 0; document.body.classList.add("ordering");
@@ -771,7 +880,7 @@
     var nb = $("o-bbc").value, ni = $("o-itv").value, moved = nb !== set.bbc || ni !== set.itv, swap = {};
     swap[set.bbc] = nb; swap[set.itv] = ni;
     order = Array.prototype.map.call($("o-list").children, function (k) { return swap[k.dataset.id] || k.dataset.id; });
-    set = { lead: pendLead, bbc: nb, itv: ni }; LEAD = set.lead * MIN;
+    set = { lead: pendLead, bbc: nb, itv: ni, theme: set.theme }; LEAD = set.lead * MIN;
     try { localStorage.setItem("bishtv:set", JSON.stringify(set)); } catch (e) {}
     if (moved) { CH[0][0] = nb; CH[2][0] = ni; CH[2][1] = itvName(ni); }
     var same = order.every(function (id, i) { return CH[i] && CH[i][0] === id; });
