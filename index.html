@@ -130,7 +130,7 @@
   #s-tags span { font: 600 11px var(--mono); letter-spacing: .05em; text-transform: uppercase;
     padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); }
   #s-tags span.t { background: var(--ink); color: #0a0a0a; border-color: var(--ink); }
-  #s-hl { display: flex; gap: 8px; margin-top: 16px; }
+  #s-hl { display: flex; gap: 8px; margin-top: 8px; }
   #s-hl button { flex: 1; height: 44px; border-radius: 999px; border: 1px solid rgba(164,139,255,.5); background: none;
     color: var(--vio); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
   #s-hl button[aria-pressed="true"] { background: var(--vio); border-color: var(--vio); color: #0a0a0a; }
@@ -154,11 +154,14 @@
     color: var(--dim); font-size: 20px; cursor: grab; touch-action: none; }
   .oi.drag { background: var(--acid-soft); border-color: var(--acid); position: relative; z-index: 1; }
   .oi.drag .grip { color: var(--acid); }
-  #s-rem { display: block; width: 100%; height: 44px; margin-top: 8px; border-radius: 999px; background: none; cursor: pointer;
+  .lab { margin: 16px 2px 0; font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  #s-rm { display: flex; gap: 8px; margin-top: 8px; }
+  #s-rm button { flex: 1; height: 44px; border-radius: 999px; background: none; cursor: pointer;
     border: 1px solid rgba(200,255,61,.5); color: var(--acid); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
-  #s-rem[aria-pressed="true"] { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
-  #s-rem:disabled { opacity: .5; }
+  #s-rm button[aria-pressed="true"] { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
+  #s-rm button:disabled { opacity: .4; }
   #s-msg { margin: 8px 4px 0; font-size: 13px; color: #ffb4a8; }
+  #s-msg.ok { color: var(--dim); }
   #s-msg:empty { display: none; }
   .p.rem .m::after { content: " \00b7 \1F514"; }
   #none { position: sticky; left: 0; width: 100vw; display: none; }
@@ -198,8 +201,10 @@
   <h2 id="s-n"></h2>
   <div id="s-e"></div>
   <div id="s-tags"></div>
+  <div class="lab">Highlight</div>
   <div id="s-hl"><button id="hl-ep" type="button"></button><button id="hl-se" type="button"></button></div>
-  <button id="s-rem" type="button"></button>
+  <div class="lab">Remind me 5 min before</div>
+  <div id="s-rm"><button id="rem-ep" type="button"></button><button id="rem-se" type="button"></button></div>
   <p id="s-msg" role="status"></p>
   <p id="s-d"></p>
 </div>
@@ -252,12 +257,13 @@
   var $ = function (id) { return document.getElementById(id); };
   var state = { day: 0, q: "", only: false };
   /* ---------- highlights: single showings (channel + start time) and whole series (by title) ---------- */
-  var hl = { s: {}, e: {} };
+  var hl = { s: {}, e: {}, r: {}, x: {} };
   try {
     var saved = JSON.parse(localStorage.getItem("bishtv:hl"));
-    if (saved && saved.s && saved.e) hl = saved;
+    if (saved && saved.s && saved.e) { hl = saved; hl.r = hl.r || {}; hl.x = hl.x || {}; }
     var cutoff = Date.now() - 2 * 864e5; // forget showings that have long since aired
     Object.keys(hl.e).forEach(function (k) { if (+k.split("|")[1] < cutoff) delete hl.e[k]; });
+    Object.keys(hl.x).forEach(function (k) { if (+k.split("|")[1] < cutoff) delete hl.x[k]; });
   } catch (e) {}
   function hlSave() { try { localStorage.setItem("bishtv:hl", JSON.stringify(hl)); } catch (e) {} }
   function sKey(p) { return p.n.split(": ")[0].toLowerCase().trim(); } // "Show: Episode title" counts as "Show"
@@ -403,21 +409,72 @@
       });
     });
   }
+  function remPost(sub, k, p, chan, auto) {
+    return fetch(PUSH + "/remind", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint, at: p.s - LEAD })
+    }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (res) {
+      rems.push({ id: k, at: res.at, s: p.s, n: p.n, ch: chan, auto: auto || "" });
+    });
+  }
+  function remDrop(sub, rec) {
+    return fetch(PUSH + "/remind", { method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint, at: rec.at })
+    }).then(function (r) { if (!r.ok) throw new Error(); rems = rems.filter(function (x) { return x !== rec; }); });
+  }
   function remToggle(id, p, chan) {
     var k = id + "|" + p.s;
     return subscription().then(function (sub) {
       return remLoad().then(function () {
         var old = rems.filter(function (r) { return r.id === k; })[0];
-        return fetch(PUSH + "/remind", {
-          method: old ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint, at: old ? old.at : p.s - LEAD })
-        }).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (res) {
-          rems = rems.filter(function (r) { return r.id !== k; });
-          if (!old) rems.push({ id: k, at: res.at, s: p.s, n: p.n, ch: chan });
-          return remSave();
-        });
+        if (old) return remDrop(sub, old).then(function () { if (old.auto) { hl.x[k] = 1; hlSave(); } }); // don't let the series bring it back
+        return remPost(sub, k, p, chan).then(function () { if (hl.x[k]) { delete hl.x[k]; hlSave(); } });
+      }).then(remSave);
+    });
+  }
+  /* Series reminders: every upcoming showing of a series gets a reminder. If any showing in the listings is
+     flagged "New", only the new ones count (so repeats don't flood you); simulcasts are reminded once and
+     showings between midnight and 6am are left out. */
+  function seriesWanted(key) {
+    var now = Date.now() + MIN, all = [], seen = {};
+    chans().forEach(function (c) {
+      (data.ch[c[0]] || []).forEach(function (p) {
+        if (p.s > now && sKey(p) === key && hm(p.s) >= "06:00") all.push({ id: c[0], p: p, ch: c[1] }); // skip overnight repeats
       });
     });
+    var fresh = all.filter(function (w) { return /\bNew\b/.test(w.p.g); });
+    if (fresh.length) all = fresh;
+    all.sort(function (a, b) { return a.p.s - b.p.s; });
+    return all.filter(function (w) { if (seen[w.p.s]) return false; seen[w.p.s] = 1; return true; }).slice(0, 40);
+  }
+  var syncing = false;
+  function seriesSync(sub) {
+    var keys = Object.keys(hl.r);
+    if (syncing || !data || !keys.length) return Promise.resolve(0);
+    if (!sub && !(swReg && "Notification" in window && Notification.permission === "granted")) return Promise.resolve(0);
+    syncing = true;
+    var added = 0;
+    return (sub ? Promise.resolve(sub) : subscription()).then(function (sub) {
+      return remLoad().then(function () {
+        var todo = [];
+        keys.forEach(function (key) {
+          seriesWanted(key).forEach(function (w) {
+            var k = w.id + "|" + w.p.s;
+            if (hl.x[k]) return;
+            if (rems.some(function (r) { return r.id === k || (r.auto === key && r.s === w.p.s); })) return;
+            todo.push(function () { return remPost(sub, k, w.p, w.ch, key).then(function () { added++; }); });
+          });
+        });
+        return todo.reduce(function (chain, job) { return chain.then(job); }, Promise.resolve());
+      }).then(function () { return added ? remSave() : null; }, function (e) { if (added) remSave(); throw e; });
+    }).then(function () { syncing = false; if (added) markAll(); return added; },
+            function (e) { syncing = false; if (added) markAll(); throw e; });
+  }
+  function seriesStop(key, sub) {
+    return remLoad().then(function () {
+      return rems.filter(function (r) { return r.auto === key; }).reduce(function (chain, rec) {
+        return chain.then(function () { return remDrop(sub, rec); });
+      }, Promise.resolve());
+    }).then(remSave, function (e) { remSave(); throw e; });
   }
 
   var busy = false;
@@ -431,7 +488,7 @@
       if (!Object.keys(ch).length) throw new Error("empty feed");
       var had = !!data;
       data = { at: Date.now(), ch: ch };
-      cacheSet(data); render(had);
+      cacheSet(data); render(had); seriesSync().catch(function () {});
     }).catch(function () {
       if (!data) message("Couldn’t load listings. Check your connection and try again.");
     }).then(function () { busy = false; });
@@ -439,7 +496,7 @@
   function start() {
     message("Loading listings…");
     remLoad().then(cacheGet).then(function (c) {
-      if (c) { data = c; render(false); }
+      if (c) { data = c; render(false); seriesSync().catch(function () {}); }
       if (!c || Date.now() - c.at > STALE) refresh();
     });
   }
@@ -642,17 +699,38 @@
     if (hl.s[k]) delete hl.s[k]; else hl.s[k] = 1;
     hlSave(); syncHl(); markAll();
   };
+  function say(text, ok) { var m = $("s-msg"); m.textContent = text; m.className = ok ? "ok" : ""; }
   function syncRem() {
-    var b = $("s-rem"), on = hasRem(cur.id, cur.p);
-    b.style.display = on || cur.p.s > Date.now() + MIN ? "" : "none";
-    b.setAttribute("aria-pressed", String(on));
-    b.textContent = on ? "\uD83D\uDD14 Reminder set \u00b7 tap to cancel" : "\uD83D\uDD14 Remind me 5 min before";
+    var e = hasRem(cur.id, cur.p), s = !!hl.r[sKey(cur.p)], b = $("rem-ep");
+    b.disabled = !e && cur.p.s <= Date.now() + MIN;
+    b.setAttribute("aria-pressed", String(e)); b.textContent = "\uD83D\uDD14 This showing";
+    $("rem-se").setAttribute("aria-pressed", String(s)); $("rem-se").textContent = "\uD83D\uDD14 Whole series";
   }
-  $("s-rem").onclick = function () {
-    var b = this, mine = cur; b.disabled = true; $("s-msg").textContent = "";
-    remToggle(mine.id, mine.p, mine.ch).catch(function (e) {
-      if (cur === mine) $("s-msg").textContent = (e && e.message) || "Couldn\u2019t reach the reminder service. Check your connection and try again.";
-    }).then(function () { b.disabled = false; if (cur === mine) syncRem(); markAll(); });
+  var FAIL = "Couldn\u2019t reach the reminder service. Check your connection and try again.";
+  function remAction(btn, job) {
+    var mine = cur; btn.disabled = true; say("");
+    job(mine).then(function (text) { if (cur === mine && text) say(text, true); }, function (e) {
+      if (cur === mine) say((e && e.message) || FAIL);
+    }).then(function () { btn.disabled = false; if (cur === mine) syncRem(); markAll(); });
+  }
+  $("rem-ep").onclick = function () {
+    remAction(this, function (c) { return remToggle(c.id, c.p, c.ch); });
+  };
+  $("rem-se").onclick = function () {
+    remAction(this, function (c) {
+      var key = sKey(c.p);
+      return subscription().then(function (sub) {
+        if (hl.r[key]) {
+          delete hl.r[key]; hlSave();
+          return seriesStop(key, sub).then(function () { return "Series reminders turned off."; });
+        }
+        hl.r[key] = 1; hlSave();
+        return seriesSync(sub).then(function (n) {
+          return n ? "Reminders set for " + n + " upcoming showing" + (n === 1 ? "" : "s") + ". New ones are added whenever you open bishTV."
+                   : "Nothing upcoming in the listings yet. Reminders will be added as new showings appear.";
+        });
+      });
+    });
   };
   function openSheet(p, c) {
     var chan = c[1]; cur = { p: p, id: c[0], ch: chan }; syncHl(); syncRem(); $("s-msg").textContent = "";
