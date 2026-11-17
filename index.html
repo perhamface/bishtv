@@ -263,6 +263,8 @@ try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
   .ruler { background: var(--glass); }
   .corner, .ch { background: var(--panel); }
   .hr.h { color: var(--ink); }
+  .daydiv { position: absolute; top: var(--rulh); bottom: 0; width: 2px; margin-left: -1px; background: var(--pink); opacity: .45; z-index: 1; pointer-events: none; }
+  .hr.mid { color: var(--pink); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; border-left: 2px solid var(--pink); }
   .ch { box-shadow: inset 4px 0 0 var(--cc, transparent); }
   .nowpill { background: var(--pink); color: #fff; }
   .nowline { background: var(--pink); box-shadow: 0 0 14px rgba(222,77,134,.55); }
@@ -701,60 +703,104 @@ try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
 
   function renderDays() {
     var box = $("days"); box.textContent = "";
-    var star = el("button", "star", "\u2605 Highlights"); star.type = "button";
+    var star = el("button", "star", "★ Highlights"); star.type = "button";
     star.setAttribute("aria-pressed", String(state.only));
     star.onclick = function () { state.only = !state.only; star.setAttribute("aria-pressed", String(state.only)); filter(); search(); };
     box.appendChild(star);
-    var films = el("button", "films", "\u25B6 Films"); films.type = "button";
+    var films = el("button", "films", "▶ Films"); films.type = "button";
     films.setAttribute("aria-pressed", String(state.films));
     films.onclick = function () { state.films = !state.films; renderDays(); search(); };
     box.appendChild(films);
     for (var i = 0; i < 7; i++) (function (i) {
-      var b = el("button", "", dayLabel(i)); b.type = "button";
+      var b = el("button", "day", dayLabel(i)); b.type = "button";
       b.setAttribute("aria-pressed", String(i === state.day && !state.films));
       b.onclick = function () {
-        if (state.films) { state.films = false; state.day = i; renderDays(); render(false); search(); }
-        else if (state.day !== i) { state.day = i; renderDays(); render(false); }
+        if (state.films) { state.films = false; renderDays(); search(); }
+        goDay(i);
       };
       box.appendChild(b);
     })(i);
     var a = el("a", "", "Data: Freeview-EPG"); a.href = "https://github.com/dp247/Freeview-EPG"; box.appendChild(a);
   }
+  // light up the day button for the day currently in view, without rebuilding anything
+  function markDay(i) {
+    if (i === state.day) return;
+    state.day = i;
+    var bs = $("days").querySelectorAll("button.day");
+    for (var k = 0; k < bs.length; k++) bs[k].setAttribute("aria-pressed", String(k === i && !state.films));
+    var cur = bs[i]; if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  // jump to a day: "now" for today, 18:00 for other days
+  function goDay(i, smooth) {
+    if (!view) { state.day = i; return; }
+    var target = i === 0 ? Date.now() : dayStart(i) + 18 * HOUR;
+    var x = Math.max(0, (target - view.t0) / MIN * view.ppm - 5);
+    ensure(x); markDay(i);
+    $("scroller").scrollTo({ left: x, behavior: smooth ? "smooth" : "auto" });
+  }
 
+  /* ---------- the grid: one continuous timeline across all seven days ----------
+     The rows and the time ruler span the whole week, but programme tiles are only built for the days near
+     where you're looking, and added as you scroll, so it stays quick. */
   function render(keepScroll) {
     if (!data) return;
     var scroller = $("scroller"), prev = { x: scroller.scrollLeft, y: scroller.scrollTop };
     var wide = window.matchMedia("(min-width: 760px)").matches;
     var ppm = wide ? 6 : 5, chw = wide ? 132 : 78;
-    var t0 = dayStart(state.day), t1 = dayStart(state.day + 1);
+    var t0 = dayStart(0), t1 = dayStart(7), days = [];
+    for (var d = 0; d <= 7; d++) days.push(dayStart(d));
     var W = (t1 - t0) / MIN * ppm;
     var x = function (ms) { return (ms - t0) / MIN * ppm; };
 
     var canvas = el("div"); canvas.id = "canvas"; canvas.style.width = (chw + W) + "px";
-    var ruler = el("div", "ruler"), corner = el("div", "corner"), ob = el("button", "", "\u2699 SETTINGS");
+    var ruler = el("div", "ruler"), corner = el("div", "corner"), ob = el("button", "", "⚙ SETTINGS");
     ob.type = "button"; ob.setAttribute("aria-label", "Settings and channel order"); ob.onclick = openOrder;
     corner.appendChild(ob); ruler.appendChild(corner);
     var rtrack = el("div", "rtrack"); rtrack.style.width = W + "px";
     for (var t = t0; t < t1; t += HOUR / 2) {
-      var mark = el("div", "hr" + ((t - t0) % HOUR ? "" : " h"), hm(t));
+      var hh = hm(t), midnight = hh === "00:00";
+      var mark = el("div", "hr" + (hh.slice(3) === "00" ? " h" : "") + (midnight ? " mid" : ""), midnight ? fDay.format(t) : hh);
       mark.style.left = x(t) + "px"; mark.style.width = 30 * ppm + "px";
       rtrack.appendChild(mark);
     }
     var pill = el("div", "nowpill"); rtrack.appendChild(pill);
     ruler.appendChild(rtrack); canvas.appendChild(ruler);
     var line = el("div", "nowline"); canvas.appendChild(line);
+    for (var dd = 1; dd < 7; dd++) { var dv = el("div", "daydiv"); dv.style.left = (chw + x(days[dd])) + "px"; canvas.appendChild(dv); }
 
-    var tiles = [], rows = [];
+    var rows = [];
     var grid = "repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px " + 30 * ppm + "px)";
     chans().forEach(function (c) {
       var list = data.ch[c[0]]; if (!list) return;
+      var any = list.some(function (p) { return p.e > t0 && p.s < t1; }); if (!any) return;
       var row = el("div", "row"), chEl = el("div", "ch", c[1]);
       chEl.style.setProperty("--cc", PAL[rows.length % PAL.length]); row.appendChild(chEl);
       var track = el("div", "track"); track.style.width = W + "px"; track.style.backgroundImage = grid;
-      var mine = [];
+      row.appendChild(track); canvas.appendChild(row);
+      rows.push({ el: row, track: track, list: list, c: c, tiles: [] });
+    });
+    if (!rows.length) return message("No listings yet.");
+
+    var none = el("p", "msg"); none.id = "none"; canvas.appendChild(none);
+    scroller.textContent = ""; scroller.appendChild(canvas);
+    view = { t0: t0, t1: t1, days: days, ppm: ppm, chw: chw, x: x, tiles: [], rows: rows, line: line, pill: pill, built: {} };
+    var sx = keepScroll ? prev.x : Math.max(0, ((state.day === 0 ? Date.now() : days[state.day] + 18 * HOUR) - t0) / MIN * ppm - 5);
+    ensure(sx);
+    if (keepScroll) { scroller.scrollLeft = prev.x; scroller.scrollTop = prev.y; }
+    else { scroller.scrollTop = 0; scroller.scrollLeft = sx; }
+    onScroll();
+  }
+  // build the tiles for one day (programmes that start that day; today also takes in anything still running from last night)
+  function buildDay(d) {
+    if (!view || view.built[d] || d < 0 || d > 6) return false;
+    view.built[d] = true;
+    var ds = view.days[d], de = view.days[d + 1], t0 = view.t0, t1 = view.t1, ppm = view.ppm, x = view.x;
+    view.rows.forEach(function (r) {
+      var list = r.list, c = r.c, frag = document.createDocumentFragment();
       for (var k = 0; k < list.length; k++) {
         var p = list[k];
-        if (p.e <= t0) continue; if (p.s >= t1) break;
+        if (p.s >= de) break;
+        if (p.e <= t0 || !(p.s >= ds || (d === 0 && p.s < ds))) continue;
         var next = list[k + 1];
         var a = Math.max(p.s, t0), z = Math.min(p.e, t1, next && next.s > p.s ? next.s : Infinity);
         if (z <= a) continue;
@@ -767,31 +813,38 @@ try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
         if (p.g) m.appendChild(document.createTextNode(" · " + p.g));
         inner.appendChild(m); tile.appendChild(inner);
         tile.onclick = (function (p) { return function () { openSheet(p, c); }; })(p);
-        track.appendChild(tile);
         if (isHl(c[0], p)) tile.classList.add("hl");
         if (hasRem(c[0], p)) tile.classList.add("rem");
+        frag.appendChild(tile);
         var rec = { el: tile, p: p, id: c[0], hay: (p.n + " " + p.g + " " + c[1]).toLowerCase() };
-        tiles.push(rec); mine.push(rec);
+        view.tiles.push(rec); r.tiles.push(rec);
       }
-      if (!mine.length) return;
-      row.appendChild(track); canvas.appendChild(row);
-      rows.push({ el: row, tiles: mine });
+      r.track.appendChild(frag);
     });
-    if (!rows.length) return message("No listings for this day yet.");
+    return true;
+  }
+  // make sure every day overlapping the visible area (plus a few hours either side) has its tiles
+  function ensure(left) {
+    if (!view) return;
+    var sc = $("scroller"), width = Math.max(320, sc.clientWidth - view.chw);
+    var from = view.t0 + (left / view.ppm) * MIN - 3 * HOUR, to = view.t0 + ((left + width) / view.ppm) * MIN + 3 * HOUR;
+    var added = false;
+    for (var d = 0; d < 7; d++) if (view.days[d + 1] > from && view.days[d] < to) added = buildDay(d) || added;
+    if (added) { tick(); filter(); }
+  }
+  var scrollRaf = 0;
+  function onScroll() {
+    scrollRaf = 0;
+    if (!view) return;
+    var sc = $("scroller"), left = sc.scrollLeft;
+    ensure(left);
+    // the day "in view" is the one at a third of the way across the visible grid
+    var t = view.t0 + ((left + (sc.clientWidth - view.chw) / 3) / view.ppm) * MIN, d = 0;
+    while (d < 6 && view.days[d + 1] <= t) d++;
+    markDay(d);
+  }
+  $("scroller").addEventListener("scroll", function () { if (!scrollRaf) scrollRaf = requestAnimationFrame(onScroll); }, { passive: true });
 
-    var none = el("p", "msg"); none.id = "none"; canvas.appendChild(none);
-    scroller.textContent = ""; scroller.appendChild(canvas);
-    view = { t0: t0, t1: t1, ppm: ppm, chw: chw, tiles: tiles, rows: rows, line: line, pill: pill };
-    tick(); filter();
-    if (keepScroll) { scroller.scrollLeft = prev.x; scroller.scrollTop = prev.y; }
-    else { scroller.scrollTop = 0; scroller.scrollLeft = startX(); }
-  }
-  // where the grid opens: at "now" today, 18:00 on other days
-  function startX() {
-    if (!view) return 0;
-    var target = state.day === 0 ? Date.now() : view.t0 + 18 * HOUR;
-    return Math.max(0, (target - view.t0) / MIN * view.ppm - 5);
-  }
   function tick() {
     var now = Date.now();
     $("clock").textContent = hm(now);
@@ -804,29 +857,32 @@ try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
       view.pill.style.left = nx + "px"; view.pill.textContent = hm(now);
     }
     view.tiles.forEach(function (t) {
+      if (t.done) return;
       var live = t.p.s <= now && now < t.p.e;
       t.el.classList.toggle("live", live);
       t.el.classList.toggle("past", t.p.e <= now);
+      if (t.p.e <= now) t.done = true; // finished programmes never change again
       if (live) t.el.style.setProperty("--pct", ((now - Math.max(t.p.s, view.t0)) / (t.p.e - Math.max(t.p.s, view.t0)) * 100).toFixed(1) + "%");
     });
   }
   function filter() {
     if (!view) return;
-    var q = "", shown = 0; // text search has its own week-wide results list (see search())
+    var shown = 0;
     view.rows.forEach(function (r) {
-      var any = false;
+      var any = !state.only; // with Highlights on, only channels with a highlighted showing this week stay
       r.tiles.forEach(function (t) {
-        var hit = (!q || t.hay.indexOf(q) >= 0) && (!state.only || t.el.classList.contains("hl"));
+        var hit = !state.only || t.el.classList.contains("hl");
         t.el.classList.toggle("miss", !hit);
         if (hit) any = true;
       });
+      if (state.only && !any) any = r.list.some(function (p) { return p.e > Date.now() && isHl(r.c[0], p); });
       r.el.classList.toggle("hide", !any);
       if (any) shown++;
     });
     var none = $("none");
     if (none) {
       none.style.display = shown ? "none" : "block";
-      none.textContent = state.only && !q ? "Nothing highlighted on this day. Tap a programme to highlight it." : "Nothing matches.";
+      none.textContent = "Nothing highlighted this week. Tap a programme to highlight it.";
     }
   }
 
@@ -1044,15 +1100,14 @@ try { var t = (JSON.parse(localStorage.getItem("bishtv:set")) || {}).theme;
     clearTimeout(qTimer); qTimer = setTimeout(search, 120);
   });
   $("now").onclick = function () {
-    if (state.films) { state.films = false; state.day = 0; renderDays(); render(false); search(); return; }
-    if (state.day !== 0) { state.day = 0; renderDays(); render(false); return; }
-    $("scroller").scrollTo({ left: startX(), behavior: "smooth" });
+    if (state.films) { state.films = false; renderDays(); search(); }
+    goDay(0, true);
   };
   setInterval(function () { if (!document.hidden) tick(); }, 30000);
   var today = dayStart(0);
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) return;
-    if (dayStart(0) !== today) { today = dayStart(0); renderDays(); render(false); } else tick();
+    if (dayStart(0) !== today) { today = dayStart(0); state.day = 0; renderDays(); render(false); } else tick();
     if (data && Date.now() - data.at > STALE) refresh();
   });
   var wasWide = window.matchMedia("(min-width: 760px)").matches;
