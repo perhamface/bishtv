@@ -270,7 +270,7 @@
     ["Now70s.uk", "Now 70s"], ["Now80s.uk", "Now 80s"], ["Now90s.uk", "Now 90s & 00s"], ["NowRock.uk", "Now Rock"],
     ["ClublandTV.uk", "Clubland TV"], ["GIGS.uk", "GIGS"]
   ];
-  var MIN = 6e4, HOUR = 36e5, STALE = 4 * HOUR;
+  var MIN = 6e4, HOUR = 36e5, STALE = 4 * HOUR, DATAV = 2;
   /* ---------- custom channel order (saved ids first, anything new falls in behind in the default order) ---------- */
   var order = [];
   try { var so = JSON.parse(localStorage.getItem("bishtv:order")); if (Array.isArray(so)) order = so; } catch (e) {}
@@ -283,7 +283,7 @@
     return out;
   }
   var $ = function (id) { return document.getElementById(id); };
-  var state = { day: 0, q: "", only: false };
+  var state = { day: 0, q: "", only: false, films: false };
   /* ---------- highlights: single showings (channel + start time) and whole series (by title) ---------- */
   var hl = { s: {}, e: {}, r: {}, x: {} };
   try {
@@ -342,6 +342,18 @@
     return t;
   }
   function pick(body, re) { var m = re.exec(body); return m ? unesc(m[1]).trim() : ""; }
+  // The feed only labels films on a few channels, so the rest are recognised from how broadcasters write
+  // their descriptions: a release year in brackets, "1955. Drama." openers, "film starring", and so on.
+  var FILMCH = { "Film4.uk": 1, "GreatMovies.uk": 1, "GreatChristmas.uk": 1, "Movies24.uk": 1, "Movies24Plus.uk": 1, "WeDoTVMovies.uk": 1 };
+  function isFilm(ch, title, d, mins, hasEp, tagged) {
+    if (mins < 60 || /shopping/i.test(title)) return false;
+    if (tagged || /^\s*\((19|20)\d\d\)/.test(d)) return true;
+    if (hasEp) return false;
+    if (mins >= 70 && /\((19|20)\d\d\)/.test(d)) return true;
+    if (/^(\(AKA[^)]*\)\.?\s*)?(19|20)\d\d\.\s/.test(d)) return true;
+    if (FILMCH[ch] && mins >= 75) return true;
+    return mins >= 80 && /\bfilm\b[^.]*\bstarring\b|^Starring\b|\bdirected by\b/i.test(d);
+  }
   function parse(xml) {
     var want = {}, out = {}, floor = dayStart(0);
     CH.forEach(function (c) { want[c[0]] = 1; });
@@ -356,10 +368,11 @@
       // some titles are cut short and finished at the start of the description
       var cont = /^\.\.\.([^:]{1,90}):\s*([\s\S]*)$/.exec(d);
       if (cont && /\.\.\.$/.test(n)) { n = n.replace(/\.\.\.$/, "").trim() + " " + cont[1].trim(); d = cont[2]; }
-      if (/<category[^>]*>\s*Movie/i.test(b)) tags.push("Film");
+      var ep = pick(b, /<episode-num system="onscreen">([^<]*)/).replace(/^S(\d+)E(\d+)$/, "S$1 E$2");
+      if (isFilm(id[1], n, d, (e - s) / MIN, !!ep, /<category[^>]*>\s*Movie/i.test(b))) tags.push("Film");
       (out[id[1]] = out[id[1]] || []).push({
         s: s, e: e, n: n || "Untitled", d: d, g: tags.join(" · "),
-        ep: pick(b, /<episode-num system="onscreen">([^<]*)/).replace(/^S(\d+)E(\d+)$/, "S$1 E$2"),
+        ep: ep,
         i: pick(b, /<icon src="([^"]*)"/)
       });
     }
@@ -522,7 +535,7 @@
       var ch = parse(xml);
       if (!Object.keys(ch).length) throw new Error("empty feed");
       var had = !!data;
-      data = { at: Date.now(), ch: ch };
+      data = { at: Date.now(), v: DATAV, ch: ch };
       cacheSet(data); render(had); search(); seriesSync().catch(function () {});
       stale(false);
     }).catch(function () {
@@ -539,7 +552,7 @@
     message("Loading listings…");
     remLoad().then(cacheGet).then(function (c) {
       if (c) { data = c; render(false); seriesSync().catch(function () {}); }
-      if (!c || Date.now() - c.at > STALE) refresh();
+      if (!c || c.v !== DATAV || Date.now() - c.at > STALE) refresh(); // older saved formats are re-read from the feed
     });
   }
   function message(text) {
@@ -553,10 +566,17 @@
     star.setAttribute("aria-pressed", String(state.only));
     star.onclick = function () { state.only = !state.only; star.setAttribute("aria-pressed", String(state.only)); filter(); search(); };
     box.appendChild(star);
+    var films = el("button", "", "\u25B6 Films"); films.type = "button";
+    films.setAttribute("aria-pressed", String(state.films));
+    films.onclick = function () { state.films = !state.films; renderDays(); search(); };
+    box.appendChild(films);
     for (var i = 0; i < 7; i++) (function (i) {
       var b = el("button", "", dayLabel(i)); b.type = "button";
-      b.setAttribute("aria-pressed", String(i === state.day));
-      b.onclick = function () { if (state.day !== i) { state.day = i; renderDays(); render(false); } };
+      b.setAttribute("aria-pressed", String(i === state.day && !state.films));
+      b.onclick = function () {
+        if (state.films) { state.films = false; state.day = i; renderDays(); render(false); search(); }
+        else if (state.day !== i) { state.day = i; renderDays(); render(false); }
+      };
       box.appendChild(b);
     })(i);
     var a = el("a", "", "Data: Freeview-EPG"); a.href = "https://github.com/dp247/Freeview-EPG"; box.appendChild(a);
@@ -799,7 +819,7 @@
   var MAXRES = 200;
   function search() {
     var words = state.q.toLowerCase().split(/\s+/).filter(Boolean);
-    var on = !!data && state.q.length >= 2;
+    var on = !!data && (state.films || state.q.length >= 2); // Films mode lists every film of the week
     document.body.classList.toggle("searching", on);
     if (!on) return;
     var now = Date.now(), hits = [], total = 0;
@@ -810,11 +830,13 @@
         var hay = (p.n + " " + p.ep + " " + p.g).toLowerCase() + " " + cl;
         for (var i = 0; i < words.length; i++) if (hay.indexOf(words[i]) < 0) return;
         if (state.only && !isHl(c[0], p)) return;
+        if (state.films && !/\bFilm\b/.test(p.g)) return;
         total++; hits.push({ p: p, c: c });
       });
     });
     hits.sort(function (a, b) { return a.p.s - b.p.s; });
-    hits = hits.slice(0, MAXRES);
+    var cap = state.films ? 1000 : MAXRES;
+    hits = hits.slice(0, cap);
     var box = $("results"), keep = box.scrollTop, frag = document.createDocumentFragment();
     var starts = []; for (var d = 0; d < 9; d++) starts.push(dayStart(d));
     var lastDay = -1;
@@ -828,16 +850,17 @@
       var body = el("div");
       body.appendChild(el("div", "rn", p.n));
       var m = el("div", "rm"); m.appendChild(el("b", "", h.c[1]));
-      var extra = [p.ep, p.g].filter(Boolean).join(" \u00b7 ");
+      var extra = [p.ep, state.films ? Math.round((p.e - p.s) / MIN) + " min" : "", state.films ? p.g.replace(/\s*\u00b7?\s*Film/, "") : p.g].filter(Boolean).join(" \u00b7 ");
       if (extra) m.appendChild(document.createTextNode(" \u00b7 " + extra));
       body.appendChild(m); row.appendChild(body);
       row.onclick = function () { openSheet(p, h.c); };
       frag.appendChild(row);
     });
-    if (!hits.length) frag.appendChild(el("p", "msg", state.only ? "No highlighted showings match in the next 7 days." : "Nothing matches in the next 7 days."));
-    else if (total > MAXRES) frag.appendChild(el("p", "msg", "Showing the first " + MAXRES + " of " + total + ". Keep typing to narrow it down."));
+    if (!hits.length) frag.appendChild(el("p", "msg", state.films ? (state.q || state.only ? "No films match in the next 7 days." : "No films in the listings.") : state.only ? "No highlighted showings match in the next 7 days." : "Nothing matches in the next 7 days."));
+    else if (total > cap) frag.appendChild(el("p", "msg", "Showing the first " + cap + " of " + total + ". " + (state.films ? "Search to narrow it down." : "Keep typing to narrow it down.")));
     box.textContent = ""; box.appendChild(frag);
-    box.scrollTop = search.last === state.q ? keep : 0; search.last = state.q;
+    var sig = state.q + "|" + state.films;
+    box.scrollTop = search.last === sig ? keep : 0; search.last = sig;
   }
   var qTimer = 0;
   $("q").addEventListener("input", function () {
@@ -845,6 +868,7 @@
     clearTimeout(qTimer); qTimer = setTimeout(search, 120);
   });
   $("now").onclick = function () {
+    if (state.films) { state.films = false; state.day = 0; renderDays(); render(false); search(); return; }
     if (state.day !== 0) { state.day = 0; renderDays(); render(false); return; }
     $("scroller").scrollTo({ left: startX(), behavior: "smooth" });
   };
