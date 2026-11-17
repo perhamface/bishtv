@@ -23,8 +23,67 @@ function putRem(d, list) {
 }
 var fTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-self.addEventListener("install", function () { self.skipWaiting(); });
-self.addEventListener("activate", function (e) { e.waitUntil(self.clients.claim()); });
+/* ---------- offline + instant open ----------
+   The app's own files are answered from a saved copy straight away, then re-checked with the server in the
+   background. If index.html has changed, the open app is told so it can offer a reload. Listings, programme
+   images and the reminder service are never intercepted. */
+var SHELL = "bishtv-shell-v1", FONTS = "bishtv-fonts-v1";
+var CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-180.png"];
+
+self.addEventListener("install", function (e) {
+  self.skipWaiting();
+  e.waitUntil(caches.open(SHELL).then(function (c) {
+    return Promise.all(CORE.map(function (u) {
+      return fetch(u, { cache: "reload" }).then(function (r) { if (r.ok) return c.put(u, r); }).catch(function () {});
+    }));
+  }));
+});
+self.addEventListener("activate", function (e) {
+  e.waitUntil(caches.keys().then(function (keys) {
+    return Promise.all(keys.filter(function (k) { return k.indexOf("bishtv-") === 0 && k !== SHELL && k !== FONTS; }).map(function (k) { return caches.delete(k); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+
+self.addEventListener("fetch", function (e) {
+  var req = e.request;
+  if (req.method !== "GET") return;
+  var url = new URL(req.url);
+
+  // typeface: saved the first time it loads, then always served from the saved copy
+  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
+    e.respondWith(caches.open(FONTS).then(function (c) {
+      return c.match(req).then(function (hit) {
+        return hit || fetch(req).then(function (r) { if (r.ok || r.type === "opaque") c.put(req, r.clone()); return r; });
+      });
+    }));
+    return;
+  }
+  if (url.origin !== self.location.origin || /\/sw\.js$/.test(url.pathname) || url.pathname.indexOf("/worker/") >= 0) return;
+
+  var isPage = req.mode === "navigate" || /\/(index\.html)?$/.test(url.pathname);
+  e.respondWith(caches.open(SHELL).then(function (c) {
+    return c.match(req, { ignoreSearch: true }).then(function (hit) {
+      var old = isPage && hit ? hit.clone() : null; // copied now, before the saved response is handed to the page
+      var fresh = fetch(req.url, { cache: "no-cache" }).then(function (r) {
+        if (!r.ok) return;
+        var copy = r.clone();
+        var saved = old ? Promise.all([old.text(), r.clone().text()]).then(function (t) { return t[0] !== t[1]; }) : Promise.resolve(false);
+        return saved.then(function (changed) {
+          return c.put(req, copy).then(function () {
+            // wait a moment so the page that is still loading exists and is listening
+            if (changed) return new Promise(function (res) { setTimeout(res, 2500); }).then(function () {
+              return self.clients.matchAll({ type: "window", includeUncontrolled: true });
+            }).then(function (wins) {
+              wins.forEach(function (w) { w.postMessage({ type: "bishtv-update" }); });
+            });
+          });
+        });
+      });
+      e.waitUntil(fresh.catch(function () {}));
+      return hit || fetch(req);
+    });
+  }));
+});
 
 self.addEventListener("push", function (e) {
   e.waitUntil(db().then(function (d) {

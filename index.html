@@ -134,6 +134,14 @@
   #s-hl button { flex: 1; height: 44px; border-radius: 999px; border: 1px solid rgba(164,139,255,.5); background: none;
     color: var(--vio); font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
   #s-hl button[aria-pressed="true"] { background: var(--vio); border-color: var(--vio); color: #0a0a0a; }
+  #toast { position: fixed; z-index: 40; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    display: none; height: 44px; padding: 0 20px; border-radius: 999px; border: 0; background: var(--acid); color: #0a0a0a;
+    font: 700 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; white-space: nowrap;
+    box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  #toast.on { display: block; }
+  #stale { display: none; flex: none; padding: 6px 14px; font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+    color: #ffcf9e; border-top: 1px solid var(--faint); }
+  #stale.on { display: block; }
   /* week-wide search results */
   #results { flex: 1; min-height: 0; overflow-y: auto; display: none; border-top: 1px solid var(--faint);
     -webkit-user-select: none; user-select: none; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
@@ -204,6 +212,7 @@
   </div>
   <div id="days"></div>
 </header>
+<div id="stale" role="status"></div>
 <div id="scroller"><p class="msg">Loading listings…</p></div>
 <div id="results"></div>
 <div id="order" role="dialog" aria-modal="true" aria-labelledby="o-title">
@@ -211,6 +220,7 @@
   <p class="ohint">Drag the handle on the right to move a channel.</p>
   <div id="o-list"></div>
 </div>
+<button id="toast" type="button">Update ready · tap to reload</button>
 <div id="shade"></div>
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="s-n">
   <div class="grab"></div>
@@ -386,7 +396,13 @@
      device (IndexedDB "rem"), and the service worker (sw.js) reads it when the wake-up arrives. */
   var PUSH = "https://bishtv-push.perham-ben.workers.dev", LEAD = 5 * MIN;
   var rems = [], swReg = null;
-  if ("serviceWorker" in navigator) { try { swReg = navigator.serviceWorker.register("sw.js"); swReg.catch(function () {}); } catch (e) {} }
+  if ("serviceWorker" in navigator) {
+    try { swReg = navigator.serviceWorker.register("sw.js"); swReg.catch(function () {}); } catch (e) {}
+    // the service worker says when a newer copy of the app has been saved in the background
+    navigator.serviceWorker.addEventListener("message", function (e) {
+      if (e.data && e.data.type === "bishtv-update") $("toast").classList.add("on");
+    });
+  }
   function remLoad() {
     return db().then(function (d) {
       return new Promise(function (res) {
@@ -508,9 +524,16 @@
       var had = !!data;
       data = { at: Date.now(), ch: ch };
       cacheSet(data); render(had); search(); seriesSync().catch(function () {});
+      stale(false);
     }).catch(function () {
       if (!data) message("Couldn’t load listings. Check your connection and try again.");
+      else stale(true);
     }).then(function () { busy = false; });
+  }
+  // shown when the saved listings couldn't be refreshed (no signal, or the feed is unreachable)
+  function stale(on) {
+    var s = $("stale"); s.classList.toggle("on", on);
+    if (on && data) s.textContent = "Offline \u00b7 listings saved " + fDay.format(data.at) + " " + hm(data.at);
   }
   function start() {
     message("Loading listings…");
@@ -839,7 +862,8 @@
   });
   try { for (var k = localStorage.length - 1; k >= 0; k--) { var key = localStorage.key(k); if (key && key.indexOf("tvg:") === 0) localStorage.removeItem(key); } } catch (e) {}
 
-  document.querySelector("h1").onclick = function () { location.reload(); }; // tap the logo to pick up a new version
+  document.querySelector("h1").onclick = function () { location.reload(); };
+  $("toast").onclick = function () { location.reload(); }; // tap the logo to pick up a new version
   renderDays(); tick(); start();
 })();
 </script>
