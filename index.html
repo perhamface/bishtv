@@ -69,8 +69,8 @@
     border-bottom: 1px solid var(--faint); }
   .corner { position: sticky; left: 0; z-index: 5; flex: none; width: var(--chw);
     background: #09090b; border-right: 1px solid var(--faint); }
-  .corner button { width: 100%; height: 100%; border: 0; background: none; color: var(--dim); cursor: pointer;
-    font: 700 10px var(--mono); letter-spacing: .1em; }
+  .corner button { width: 100%; height: 100%; padding: 0; border: 0; background: none; color: var(--dim); cursor: pointer;
+    font: 700 10px var(--mono); letter-spacing: .03em; white-space: nowrap; }
   .rtrack { position: relative; flex: none; }
   .hr { position: absolute; top: 0; height: 100%; display: flex; align-items: center;
     padding-left: 8px; font: 600 11px var(--mono); color: var(--dim); letter-spacing: .04em;
@@ -169,8 +169,22 @@
     color: var(--ink); font: 700 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
   .obar #o-done { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
   .ohint { flex: none; margin: 0; padding: 10px 16px; font: 11px var(--mono); color: var(--dim); letter-spacing: .03em; }
-  #o-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px calc(20px + env(safe-area-inset-bottom));
-    max-width: 560px; width: 100%; margin: 0 auto; }
+  #o-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 max(0px, calc((100% - 560px) / 2)); }
+  #o-list { padding: 0 10px calc(20px + env(safe-area-inset-bottom)); }
+  .osec { display: flex; align-items: center; justify-content: space-between; padding: 22px 16px 10px;
+    font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--acid); }
+  .osec button { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--faint); background: none;
+    color: var(--ink); font: 700 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+  .seg { display: flex; gap: 6px; padding: 0 10px; }
+  .seg button { flex: 1; height: 44px; border-radius: 14px; border: 1px solid var(--faint); background: var(--tile); color: var(--ink);
+    font: 700 12px var(--mono); letter-spacing: .04em; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--acid); border-color: var(--acid); color: #0a0a0a; }
+  .osel { display: flex; align-items: center; gap: 12px; height: 52px; margin: 0 10px 6px; padding: 0 6px 0 14px; border-radius: 14px;
+    background: var(--tile); border: 1px solid var(--faint); font: 650 15px var(--display); box-sizing: border-box; }
+  .osel span { flex: none; }
+  .osel select { flex: 1; min-width: 0; height: 38px; border: 0; border-radius: 10px; background: #1b1b20; color: var(--ink);
+    font: 500 14px system-ui, sans-serif; padding: 0 8px; text-align: right; }
+  .onote { margin: 4px 16px 0; font: 11px var(--mono); color: var(--dim); letter-spacing: .03em; }
   .oi { display: flex; align-items: center; height: 52px; margin-bottom: 6px; padding-left: 14px; border-radius: 14px;
     background: var(--tile); border: 1px solid var(--faint); font: 650 15px var(--display); }
   .oi .num { width: 30px; font: 500 11px var(--mono); color: var(--dim); }
@@ -216,9 +230,18 @@
 <div id="scroller"><p class="msg">Loading listings…</p></div>
 <div id="results"></div>
 <div id="order" role="dialog" aria-modal="true" aria-labelledby="o-title">
-  <div class="obar"><h2 id="o-title">Channel order</h2><button id="o-reset" type="button">Reset</button><button id="o-done" type="button">Done</button></div>
-  <p class="ohint">Drag the handle on the right to move a channel.</p>
-  <div id="o-list"></div>
+  <div class="obar"><h2 id="o-title">Settings</h2><button id="o-done" type="button">Done</button></div>
+  <div id="o-body">
+    <div class="osec">Reminder notice</div>
+    <div class="seg" id="o-lead"></div>
+    <p class="onote">Applies to reminders you set from now on.</p>
+    <div class="osec">Your region</div>
+    <label class="osel"><span>BBC One</span><select id="o-bbc"></select></label>
+    <label class="osel"><span>ITV1 / STV / UTV</span><select id="o-itv"></select></label>
+    <div class="osec">Channel order <button id="o-reset" type="button">Reset</button></div>
+    <p class="ohint">Drag the handle on the right to move a channel.</p>
+    <div id="o-list"></div>
+  </div>
 </div>
 <button id="toast" type="button">Update ready · tap to reload</button>
 <div id="shade"></div>
@@ -231,7 +254,7 @@
   <div id="s-tags"></div>
   <div class="lab">Highlight</div>
   <div id="s-hl"><button id="hl-ep" type="button"></button><button id="hl-se" type="button"></button></div>
-  <div class="lab">Remind me 5 min before</div>
+  <div class="lab" id="lab-rem">Remind me 5 min before</div>
   <div id="s-rm"><button id="rem-ep" type="button"></button><button id="rem-se" type="button"></button></div>
   <p id="s-msg" role="status"></p>
   <p id="s-d"></p>
@@ -242,10 +265,30 @@
   "use strict";
   var FEED = "https://raw.githubusercontent.com/dp247/Freeview-EPG/master/epg.xml";
   // Regional versions of BBC One and ITV1 (swap the ids for another region, e.g. BBCOneLondonHD.uk / ITV1London.uk)
-  var BBC1 = "BBCOneWest.uk", ITV1 = "ITV1WestCountry.uk";
+  var BBCS = [["BBCOneWest.uk", "West"], ["BBCOneSouthWest.uk", "South West"], ["BBCOneSouth.uk", "South"], ["BBCOneSouthEast.uk", "South East"],
+    ["BBCOneLondonHD.uk", "London"], ["BBCOneEast.uk", "East"], ["BBCOneEastMidlands.uk", "East Midlands"], ["BBCOneWestMidlands.uk", "West Midlands"],
+    ["BBCOneNorthWest.uk", "North West"], ["BBCOneNorthEastCumbria.uk", "North East & Cumbria"], ["BBCOneYorkshire.uk", "Yorkshire"],
+    ["BBCOneYorksLincs.uk", "Yorks & Lincs"], ["BBCOneChannelIslands.uk", "Channel Islands"], ["BBCOneWalesHD.uk", "Wales"],
+    ["BBCOneScotHD.uk", "Scotland"], ["BBCOneNorthernIreland.uk", "Northern Ireland"]];
+  var ITVS = [["ITV1WestCountry.uk", "West Country"], ["ITV1West.uk", "West"], ["ITV1MeridianS.uk", "Meridian (South)"], ["ITV1MeridianE.uk", "Meridian (East)"],
+    ["ITV1MeridianN.uk", "Meridian (North)"], ["ITV1London.uk", "London"], ["ITV1Anglia.uk", "Anglia"], ["ITV1AngliaWest.uk", "Anglia (West)"],
+    ["ITV1CentralW.uk", "Central (West)"], ["ITV1CentralE.uk", "Central (East)"], ["ITV1Granada.uk", "Granada"], ["ITV1YorkshireWest.uk", "Yorkshire"],
+    ["ITV1YorkshireEast.uk", "Yorkshire (East)"], ["ITV1TyneTees.uk", "Tyne Tees"], ["ITV1Border.uk", "Border"], ["ITV1North.uk", "North"],
+    ["ITV1Wales.uk", "Wales"], ["STVCentral.uk", "STV Central"], ["STVNorth.uk", "STV North"], ["UTV.uk", "UTV"]];
+  var LEADS = [5, 10, 15, 30];
+  var set = { lead: 5, bbc: "BBCOneWest.uk", itv: "ITV1WestCountry.uk" };
+  try {
+    var ss = JSON.parse(localStorage.getItem("bishtv:set")) || {};
+    var known = function (list, id) { return list.some(function (r) { return r[0] === id; }); };
+    if (LEADS.indexOf(ss.lead) >= 0) set.lead = ss.lead;
+    if (known(BBCS, ss.bbc)) set.bbc = ss.bbc;
+    if (known(ITVS, ss.itv)) set.itv = ss.itv;
+  } catch (e) {}
+  function itvName(id) { return /^STV/.test(id) ? "STV" : /^UTV/.test(id) ? "UTV" : "ITV1"; }
+  var BBC1 = set.bbc, ITV1 = set.itv;
   // Channels shown, in row order. Anything not listed (radio, shopping, +1s, Irish and other regional feeds) is skipped.
   var CH = [
-    [BBC1, "BBC One"], ["BBCTwoHD.uk", "BBC Two"], [ITV1, "ITV1"], ["Channel4London.uk", "Channel 4"], ["5.uk", "5"],
+    [BBC1, "BBC One"], ["BBCTwoHD.uk", "BBC Two"], [ITV1, itvName(ITV1)], ["Channel4London.uk", "Channel 4"], ["5.uk", "5"],
     ["ITV2.uk", "ITV2"], ["BBCThreeHD.uk", "BBC Three"], ["BBCFourHD.uk", "BBC Four"], ["ITV3.uk", "ITV3"],
     ["SkyMix.uk", "Sky Mix"], ["UAndYesterday.uk", "U&Yesterday"], ["E4.uk", "E4"], ["Film4.uk", "Film4"],
     ["Really.uk", "Really"], ["More4.uk", "More4"], ["UAndDave.uk", "U&Dave"], ["UAndDrama.uk", "U&Drama"],
@@ -407,7 +450,7 @@
   /* ---------- reminders: a push notification 5 minutes before a programme starts ----------
      The Cloudflare Worker only stores "wake this phone at this minute". What to show is kept on this
      device (IndexedDB "rem"), and the service worker (sw.js) reads it when the wake-up arrives. */
-  var PUSH = "https://bishtv-push.perham-ben.workers.dev", LEAD = 5 * MIN;
+  var PUSH = "https://bishtv-push.perham-ben.workers.dev", LEAD = set.lead * MIN;
   var rems = [], swReg = null;
   if ("serviceWorker" in navigator) {
     try { swReg = navigator.serviceWorker.register("sw.js"); swReg.catch(function () {}); } catch (e) {}
@@ -552,7 +595,7 @@
     message("Loading listings…");
     remLoad().then(cacheGet).then(function (c) {
       if (c) { data = c; render(false); seriesSync().catch(function () {}); }
-      if (!c || c.v !== DATAV || Date.now() - c.at > STALE) refresh(); // older saved formats are re-read from the feed
+      if (!c || c.v !== DATAV || Date.now() - c.at > STALE || !c.ch[CH[0][0]] || !c.ch[CH[2][0]]) refresh(); // older saved formats are re-read from the feed
     });
   }
   function message(text) {
@@ -592,8 +635,8 @@
     var x = function (ms) { return (ms - t0) / MIN * ppm; };
 
     var canvas = el("div"); canvas.id = "canvas"; canvas.style.width = (chw + W) + "px";
-    var ruler = el("div", "ruler"), corner = el("div", "corner"), ob = el("button", "", "\u21C5 ORDER");
-    ob.type = "button"; ob.setAttribute("aria-label", "Change channel order"); ob.onclick = openOrder;
+    var ruler = el("div", "ruler"), corner = el("div", "corner"), ob = el("button", "", "\u2699 SETTINGS");
+    ob.type = "button"; ob.setAttribute("aria-label", "Settings and channel order"); ob.onclick = openOrder;
     corner.appendChild(ob); ruler.appendChild(corner);
     var rtrack = el("div", "rtrack"); rtrack.style.width = W + "px";
     for (var t = t0; t < t1; t += HOUR / 2) {
@@ -705,29 +748,52 @@
     var kids = $("o-list").children;
     for (var i = 0; i < kids.length; i++) kids[i].firstChild.textContent = i + 1;
   }
-  function openOrder() { fillOrder(chans()); $("o-list").scrollTop = 0; document.body.classList.add("ordering"); }
+  var pendLead = 5;
+  function fillLead() {
+    var box = $("o-lead"); box.textContent = "";
+    LEADS.forEach(function (m) {
+      var b = el("button", "", m + " min"); b.type = "button"; b.setAttribute("aria-pressed", String(m === pendLead));
+      b.onclick = function () { pendLead = m; fillLead(); };
+      box.appendChild(b);
+    });
+  }
+  function fillSelect(sel, list, cur) {
+    sel.textContent = "";
+    list.forEach(function (r) { var o = el("option", "", r[1]); o.value = r[0]; o.selected = r[0] === cur; sel.appendChild(o); });
+  }
+  function openOrder() {
+    pendLead = set.lead; fillLead();
+    fillSelect($("o-bbc"), BBCS, set.bbc); fillSelect($("o-itv"), ITVS, set.itv);
+    fillOrder(chans()); $("o-body").scrollTop = 0; document.body.classList.add("ordering");
+  }
   $("o-reset").onclick = function () { fillOrder(CH); };
   $("o-done").onclick = function () {
-    order = Array.prototype.map.call($("o-list").children, function (k) { return k.dataset.id; });
+    var nb = $("o-bbc").value, ni = $("o-itv").value, moved = nb !== set.bbc || ni !== set.itv, swap = {};
+    swap[set.bbc] = nb; swap[set.itv] = ni;
+    order = Array.prototype.map.call($("o-list").children, function (k) { return swap[k.dataset.id] || k.dataset.id; });
+    set = { lead: pendLead, bbc: nb, itv: ni }; LEAD = set.lead * MIN;
+    try { localStorage.setItem("bishtv:set", JSON.stringify(set)); } catch (e) {}
+    if (moved) { CH[0][0] = nb; CH[2][0] = ni; CH[2][1] = itvName(ni); }
     var same = order.every(function (id, i) { return CH[i] && CH[i][0] === id; });
     try { if (same) { order = []; localStorage.removeItem("bishtv:order"); } else localStorage.setItem("bishtv:order", JSON.stringify(order)); } catch (e) {}
     document.body.classList.remove("ordering");
-    render(true);
+    render(true); search();
+    if (moved) refresh(); // fetch listings for the newly chosen regional channels
   };
   (function () {
     var box = $("o-list"), item = null, lastY = 0, raf = 0;
     function place() {
       var r = box.getBoundingClientRect(), kids = box.children;
-      var idx = Math.max(0, Math.min(kids.length - 1, Math.floor((lastY - r.top + box.scrollTop) / OH)));
+      var idx = Math.max(0, Math.min(kids.length - 1, Math.floor((lastY - r.top) / OH)));
       var at = Array.prototype.indexOf.call(kids, item);
       if (idx !== at) { box.insertBefore(item, idx > at ? kids[idx].nextSibling : kids[idx]); renumber(); }
     }
     function loop() {
       raf = 0; if (!item) return;
-      var r = box.getBoundingClientRect(), edge = 70, v = 0;
+      var sc = $("o-body"), r = sc.getBoundingClientRect(), edge = 70, v = 0;
       if (lastY < r.top + edge) v = -Math.ceil((r.top + edge - lastY) / 5);
       else if (lastY > r.bottom - edge) v = Math.ceil((lastY - (r.bottom - edge)) / 5);
-      if (v) { box.scrollTop += v; place(); raf = requestAnimationFrame(loop); }
+      if (v) { sc.scrollTop += v; place(); raf = requestAnimationFrame(loop); }
     }
     box.addEventListener("pointerdown", function (e) {
       var g = e.target.closest && e.target.closest(".grip"); if (!g) return;
@@ -764,6 +830,7 @@
   function say(text, ok) { var m = $("s-msg"); m.textContent = text; m.className = ok ? "ok" : ""; }
   function syncRem() {
     var e = hasRem(cur.id, cur.p), s = !!hl.r[sKey(cur.p)], b = $("rem-ep");
+    $("lab-rem").textContent = "Remind me " + set.lead + " min before";
     b.disabled = !e && cur.p.s <= Date.now() + MIN;
     b.setAttribute("aria-pressed", String(e)); b.textContent = "\uD83D\uDD14 This showing";
     $("rem-se").setAttribute("aria-pressed", String(s)); $("rem-se").textContent = "\uD83D\uDD14 Whole series";
